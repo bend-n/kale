@@ -6,6 +6,7 @@ macro_rules! tokens {
     ($($z:literal $( | $y:literal)? => $v:ident,)+) => {
         #[derive(Logos, Debug, PartialEq, Clone)]
         #[logos(skip r"[\n\s]+")]
+        #[allow(dead_code)]
         pub enum Token<'strings> {
             #[regex("/[^\n/]+/", priority = 8)]
             Comment(&'strings str),
@@ -38,11 +39,12 @@ macro_rules! tokens {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
                 match self {
                     $(Self::$v => write!(f, $z),)+
-                    Self::FnIdent(s) | Self::Ident(s) | Self::Comment(s) => write!(f, "{s}"),
                     Self::String(s) => write!(f, "{s}"),
                     Self::Float(n) => write!(f, "{n}"),
                     Self::Int(n) => write!(f, "{n}"),
                     Self::OpeningBracket(x) | Self::ClosingBracket(x) => write!(f,"{x}"),
+                    Self::Comment(_) => write!(f, ""),
+                    Self::Ident(x) => write!(f, "{x}"),
                 }
             }
         }
@@ -54,8 +56,11 @@ tokens! {
     "←" => Place,
     "→" => Ret,
     "=" => Eq,
-    "." => Dup,
-    ":" => Flip,
+    "🐢" => Dup,
+    "🐘" => Both,
+    "🍴" => Fork,
+    "🐈" => Flip,
+    "↖" => Reverse,
     "⤵️" => Pop,
     "+" => Add,
     "×" => Mul,
@@ -66,16 +71,21 @@ tokens! {
     "≤" | "≯" => Le,
     ">" => Gt,
     "≥" | "≮" => Ge,
-    "«" => Shl,
-    "»" => Shr,
+    "⏪" => Shl,
+    "⏩" => Shr,
     "¯" => Neg,
-    "&" => And,
-    "|" => Or,
-    "^" => Xor,
+    "∧" => And,
+    "∨" => Or,
+    "⊻" => Xor,
     "÷" => Div,
     "%" => Mod,
     "🔎" => Keep,
     "🚧" => Split,
+    "⬅" => First,
+    "➡" => Last,
+    "⏭️" => Each,
+    "➡️" => Reduce,
+    "↘️" => ReduceStack,
 
 }
 

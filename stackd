@@ -1,8 +1,15 @@
-push "1abc25hriwm4"
-
-line ← λ { str -> int } (
-	48>🔎57<🔎
-	57 -
-	first 10 * swap last +
-	dup call swap call
+"1abc25hriwm4"
+// { str → int }
+line ← λ (
+	'0'>🔎'9'<🔎
+	'9'-
+	// modifiers are placed in front
+	🐘⬅➡
+	10×+
 )
+
+🐢≠'\n'🚧
+// run function on all values, pushing to the stack
+⏭️line
+// reduce the stack
+↘️+
