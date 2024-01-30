@@ -1,0 +1,8 @@
+push "1abc25hriwm4"
+
+line ← λ { str -> int } (
+	48>🔎57<🔎
+	57 -
+	first 10 * swap last +
+	dup call swap call
+)
