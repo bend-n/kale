@@ -13,6 +13,3 @@ line ← λ (
 ⏭️line
 // reduce the stack
 ↘️+
-
-// true 🐋 (+ 🐳 -)
-// if true { + } else { - }

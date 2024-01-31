@@ -52,7 +52,7 @@ macro_rules! tokens {
 }
 
 tokens! {
-    "λ" => Lamba,
+    "λ" => Lambda,
     "←" => Place,
     "→" => Ret,
     "=" => Eq,
@@ -86,6 +86,8 @@ tokens! {
     "⏭️" => Each,
     "➡️" => Reduce,
     "↘️" => ReduceStack,
+    "🐋" => If,
+    "🐳" => Else,
 
 }
 
@@ -115,8 +117,27 @@ impl<'s> Iterator for Lexer<'s> {
 
 #[test]
 fn lexer() {
-    let mut lex = lex(r#""#);
-    // while let Some(x) = lex.next() { print!("{x} "); }
+    let mut lex = lex(r#""1abc25hriwm4"
+    / { str → int } /
+    line ← λ (
+        '0'>🔎'9'<🔎
+        '9'-
+        / modifiers are placed in front /
+        🐘⬅➡
+        10×+
+    )
+    
+    🐢≠'\n'🚧
+    / run function on all values, pushing to the stack /
+    ⏭️line
+    / reduce the stack /
+    ↘️+
+    
+    true 🐋 (+ 🐳 -)
+    / if true { + } else { - } /"#);
+    while let Some((x, _)) = lex.next() {
+        print!("{x:?} ");
+    }
     macro_rules! test {
         ($($tok:ident$(($var:literal))?)+) => {{
             $(assert_eq!(lex.next().map(|(x,_)|x), Some(Token::$tok$(($var.into()))?));)+
