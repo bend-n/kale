@@ -19,8 +19,10 @@ macro_rules! tokens {
             #[regex(r#""([^\\"\n])*""#, callback = |lex| Cow::from(&lex.slice()[1..lex.slice().len()-1]), priority = 12)]
             #[regex(r#""[^"]*""#, callback = |lex| Cow::from(lex.slice()[1..lex.slice().len()-1].replace(r"\n", "\n")), priority = 8)]
             String(Cow<'strings, str>),
+            #[regex(r"'.'", |lex| lex.slice().as_bytes()[1] as char)]
+            Char(char),
             // todo ignore alot
-            #[regex(r"[^\s0-9][^\s]*", priority = 7)]
+            #[regex(r"[^\s\(\)\[\]\{\}0-9λ'\-←→=🐢🐘🍴🐈↖⤵️+×*√≠<≤>≥⏪⏩\-¯∧∨⊻÷%🔎🚧⬅➡⏭️➡️↘️🐋🐳][^\(\)\[\]\{\}λ←→='🐢🐘🍴🐈↖⤵️+×*√≠<≤>≥⏪⏩¯∧∨⊻÷%🔎🚧⬅➡⏭️➡️↘️🐋🐳\s]*", priority = 7)]
             Ident(&'strings str),
 
             #[token("[", chr::<'['>)]
@@ -39,6 +41,7 @@ macro_rules! tokens {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
                 match self {
                     $(Self::$v => write!(f, $z),)+
+                    Self::Char(x) => write!(f, "'{x}'"),
                     Self::String(s) => write!(f, "{s}"),
                     Self::Float(n) => write!(f, "{n}"),
                     Self::Int(n) => write!(f, "{n}"),
@@ -68,14 +71,15 @@ tokens! {
     "√" => Sqrt,
     "≠" => Ne,
     "<" => Lt,
-    "≤" | "≯" => Le,
+    "≤" => Le,
     ">" => Gt,
-    "≥" | "≮" => Ge,
+    "≥" => Ge,
     "⏪" => Shl,
     "⏩" => Shr,
     "¯" => Neg,
     "∧" => And,
     "∨" => Or,
+    "-" => Sub,
     "⊻" => Xor,
     "÷" => Div,
     "%" => Mod,
@@ -135,13 +139,14 @@ fn lexer() {
     
     true 🐋 (+ 🐳 -)
     / if true { + } else { - } /"#);
-    while let Some((x, _)) = lex.next() {
-        print!("{x:?} ");
-    }
+    // while let Some((x, _)) = lex.next() {
+    //     print!("{x} ");
+    // }
     macro_rules! test {
         ($($tok:ident$(($var:literal))?)+) => {{
             $(assert_eq!(lex.next().map(|(x,_)|x), Some(Token::$tok$(($var.into()))?));)+
             assert_eq!(lex.next(), None);
         }}
     }
+    test! [String("1abc25hriwm4") Ident("line") Place Lambda OpeningBracket('(') Char('0') Gt Keep Char('9') Lt Keep Char('9') Sub Both First Last Int(10u64) Mul Add ClosingBracket(')') Dup Ne Ident("\\n") Split Each Ident("line") ReduceStack Add Ident("true") If OpeningBracket('(') Add Else Sub ClosingBracket(')') ]
 }
