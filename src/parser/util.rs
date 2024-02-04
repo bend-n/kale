@@ -52,7 +52,7 @@ macro_rules! t {
 }
 macro_rules! parser {
     ($t:ty) => {
-        impl Parser<'s, crate::parser::types::Input<'s>, $t, extra::Err<Error<'s>>> + Clone
+        impl Parser<'s, crate::parser::types::Input<'s>, $t, extra::Err<Error<'s>>> + Clone + 's
     }
 }
 

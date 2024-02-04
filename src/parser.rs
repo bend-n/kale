@@ -1,14 +1,16 @@
-mod types;
+pub mod types;
 use crate::lexer::{Lexer, Token};
 use chumsky::{
     input::{SpannedInput, Stream},
     prelude::*,
     Parser,
 };
-mod fun;
-mod util;
+pub mod fun;
+pub mod util;
 use types::*;
 use util::*;
+
+use self::fun::Function;
 
 impl<'s> Value<'s> {
     pub fn parse() -> parser![Self] {
@@ -35,11 +37,11 @@ impl<'s> Expr<'s> {
                 choice((t![ident].map(Expr::Ident), val)).boxed()
             });
 
-            let λ = Lambda::parse().map(Expr::Lambda);
+            let λ = Λ::parse(expr.clone());
 
             let decl = t![ident]
                 .then_ignore(t![<-])
-                .then(inline_expr.clone().or(λ.clone()))
+                .then(inline_expr.clone().or(λ.clone().map(Expr::Lambda)))
                 .map(|(name, body)| Expr::Let {
                     name,
                     rhs: Box::new(body),
@@ -50,7 +52,7 @@ impl<'s> Expr<'s> {
             let r#if = t![if]
                 .ignore_then(
                     expr.clone()
-                        .then(t![else].or_not().ignore_then(expr.or_not()))
+                        .then(t![else].or_not().ignore_then(expr.clone().or_not()))
                         .delimited_by(t!['('], t![')']),
                 )
                 .map(|(a, b)| Expr::If {
@@ -59,14 +61,22 @@ impl<'s> Expr<'s> {
                 })
                 .labelled("🐋")
                 .boxed();
-            choice((decl, r#if, inline_expr, λ))
+            choice((
+                decl,
+                r#if,
+                inline_expr,
+                λ.clone().map(Expr::Lambda),
+                Function::parse(λ).map(Expr::Function),
+            ))
+            .labelled("expr")
         })
     }
 }
 
 #[test]
 fn parse_expr() {
-    dbg!(Expr::parse().parse(code("a ← λ ( +- 🍴 )")).unwrap());
+    parse_s("a ← λ ( +- 🍴 )", Expr::parse());
+    // dbg!(Expr::parse().parse(code("a ← λ ( +- 🍴 )")).unwrap());
 }
 
 pub fn stream(lexer: Lexer<'_>, len: usize) -> SpannedInput<Token<'_>, Span, Stream<Lexer<'_>>> {
@@ -76,6 +86,14 @@ pub fn stream(lexer: Lexer<'_>, len: usize) -> SpannedInput<Token<'_>, Span, Str
 #[cfg(test)]
 pub fn code<'s>(x: &'s str) -> SpannedInput<Token<'s>, Span, Stream<Lexer<'s>>> {
     stream(crate::lexer::lex(x), x.len())
+}
+
+#[cfg(test)]
+pub fn parse_s<'s, T: std::fmt::Debug>(x: &'s str, p: parser![T]) -> T {
+    match crate::ui::display(p.parse(code(x)).into_result(), x) {
+        Ok(x) => dbg!(x),
+        Err(()) => panic!(),
+    }
 }
 
 pub fn parse(tokens: Lexer<'_>, len: usize) -> Result<Ast<'_>, Vec<Error<'_>>> {

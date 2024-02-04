@@ -6,12 +6,12 @@ use chumsky::{prelude::*, Parser};
 #[derive(Debug, Clone)]
 pub enum Function<'s> {
     Dup,
-    Both(Lambda<'s>, Lambda<'s>),
-    Fork(Lambda<'s>, Lambda<'s>),
-    Gap(Lambda<'s>),
-    Hold(Lambda<'s>),
+    Both(Λ<'s>, Λ<'s>),
+    Fork(Λ<'s>, Λ<'s>),
+    Gap(Λ<'s>),
+    Hold(Λ<'s>),
     Flip,
-    Duck(Lambda<'s>),
+    Duck(Λ<'s>),
     Reverse,
     Zap,
     Add,
@@ -36,28 +36,28 @@ pub enum Function<'s> {
     Split,
     First,
     Last,
-    Each(Lambda<'s>),
-    Reduce(Lambda<'s>),
-    ReduceStack(Lambda<'s>),
+    Each(Λ<'s>),
+    Reduce(Λ<'s>),
+    ReduceStack(Λ<'s>),
     Range,
     Call,
 }
 
-impl<'s> Lambda<'s> {
-    pub fn parse() -> parser![Self] {
-        t![λ]
-            .ignore_then(
-                Expr::parse()
-                    .repeated()
-                    .collect()
-                    .delimited_by(t!['('], t![')']),
-            )
-            .map(|x| Self(x))
+impl<'s> Λ<'s> {
+    pub fn parse(exp: parser![Expr<'s>]) -> parser![Self] {
+        let mut λ = Recursive::declare();
+        λ.define(choice((
+            t![λ]
+                .ignore_then(exp.repeated().collect().delimited_by(t!['('], t![')']))
+                .map(|x| Self(x)),
+            Function::parse(λ.clone()).map(|x| Λ(vec![Expr::Function(x)])),
+        )));
+        λ.labelled("λ")
     }
 }
 
 impl<'s> Function<'s> {
-    pub fn parse() -> parser![Self] {
+    pub fn parse(λ: parser![Λ<'s>]) -> parser![Self] {
         use Function::*;
         let basic = select! {
             Token::Dup => Dup,
@@ -88,12 +88,16 @@ impl<'s> Function<'s> {
             Token::Last => Last,
         };
         macro_rules! two {
-            ($name:ident) => {
-                Lambda::parse()
-                    .then(Lambda::parse())
-                    .then_ignore(just(Token::$name))
-                    .map(|(a, b)| $name(a, b))
-            };
+            ($name:ident) => {{
+                let mut p = Recursive::declare();
+                p.define(
+                    λ.clone()
+                        .then(λ.clone())
+                        .then_ignore(just(Token::$name))
+                        .map(|(a, b)| $name(a, b)),
+                );
+                p
+            }};
         }
         choice((basic, two![Both], two![Fork]))
     }

@@ -16,7 +16,7 @@ pub enum Ast<'s> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Lambda<'s>(pub Vec<Expr<'s>>);
+pub struct Λ<'s>(pub Vec<Expr<'s>>);
 
 #[derive(Clone)]
 pub enum Value<'s> {
@@ -43,7 +43,7 @@ pub enum Expr<'s> {
     Function(super::fun::Function<'s>),
     Value(Value<'s>),
     Ident(&'s str),
-    Lambda(Lambda<'s>),
+    Lambda(Λ<'s>),
     Let {
         name: &'s str,
         rhs: Box<Expr<'s>>,
