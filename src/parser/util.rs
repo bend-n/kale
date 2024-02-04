@@ -29,7 +29,7 @@ macro_rules! t {
         just(Token::ThinArrow)
     };
     (()) => {
-        just(Token::Unit)
+        just(Token::Call)
     };
     ('(') => {
         just(Token::OpeningBracket('('))

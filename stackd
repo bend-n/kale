@@ -1,18 +1,26 @@
 "1abc25hriwm4"
+// usage: 0 🐢 λ(<5) λ(1+) 🐬☎️
+🐬 ← λ (
+	/ evaluate the condition /
+	λ(🐢🪣☎️)✊✊
+	🐋 (
+		/ evaluate the body /
+		🐢☎️
+		/ recurse /
+		🐬☎️
+	)
+)
+
 // { str → int }
 line ← λ (
-	'0'>🔎'9'<🔎
+	'0'>🔓'9'<🔓
 	'9'-
-	// modifiers are placed in front
-	🐘⬅➡
+	⬅➡🍴
 	10×+
 )
 
-🐢≠'\n'🚧
-// run function on all values, pushing to the stack
+🐢≢'\n'🚧
+/ run function on all values, pushing to the stack /
 ⏭️line
-// reduce the stack
+/ reduce the stack /
 ↘️+
-
-// true 🐋 (+ 🐳 -)
-// if true { + } else { - }

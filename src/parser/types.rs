@@ -15,6 +15,9 @@ pub enum Ast<'s> {
     Module(Vec<Expr<'s>>),
 }
 
+#[derive(Clone, Debug)]
+pub struct Lambda<'s>(pub Vec<Expr<'s>>);
+
 #[derive(Clone)]
 pub enum Value<'s> {
     Float(f64),
@@ -34,11 +37,13 @@ impl std::fmt::Debug for Value<'_> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Expr<'s> {
     NoOp,
+    Function(super::fun::Function<'s>),
     Value(Value<'s>),
     Ident(&'s str),
+    Lambda(Lambda<'s>),
     Let {
         name: &'s str,
         rhs: Box<Expr<'s>>,

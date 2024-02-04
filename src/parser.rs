@@ -5,6 +5,7 @@ use chumsky::{
     prelude::*,
     Parser,
 };
+mod fun;
 mod util;
 use types::*;
 use util::*;
@@ -34,7 +35,7 @@ impl<'s> Expr<'s> {
                 choice((t![ident].map(Expr::Ident), val)).boxed()
             });
 
-            let λ = t![λ].ignore_then(expr.clone().delimited_by(t!['('], t![')']));
+            let λ = Lambda::parse().map(Expr::Lambda);
 
             let decl = t![ident]
                 .then_ignore(t![<-])
@@ -56,11 +57,16 @@ impl<'s> Expr<'s> {
                     then: Box::new(a),
                     or: Box::new(b.unwrap_or_else(|| Expr::Value(Value::Unit))),
                 })
-                .labelled("if")
+                .labelled("🐋")
                 .boxed();
             choice((decl, r#if, inline_expr, λ))
         })
     }
+}
+
+#[test]
+fn parse_expr() {
+    dbg!(Expr::parse().parse(code("a ← λ ( +- 🍴 )")).unwrap());
 }
 
 pub fn stream(lexer: Lexer<'_>, len: usize) -> SpannedInput<Token<'_>, Span, Stream<Lexer<'_>>> {
