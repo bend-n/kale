@@ -1,22 +1,49 @@
-use std::ops::Deref;
+use std::{
+    fmt::{Debug, FormattingOptions},
+    ops::Deref,
+};
 
 use crate::lexer::Token;
 use beef::lean::Cow;
 use chumsky::{
-    input::{SpannedInput, Stream},
+    input::{MappedInput, Stream},
     prelude::*,
 };
-use match_deref::match_deref;
 pub type Span = SimpleSpan<usize>;
 pub type Error<'s> = Rich<'s, Token<'s>, Span>;
-pub type Input<'s> = SpannedInput<Token<'s>, SimpleSpan, Stream<crate::lexer::Lexer<'s>>>;
+pub type Input<'s> = MappedInput<
+    Token<'s>,
+    Span,
+    Stream<crate::lexer::Lexer<'s>>,
+    fn((Token<'_>, SimpleSpan)) -> (Token<'_>, SimpleSpan),
+>;
 
+#[derive(Debug)]
 pub enum Ast<'s> {
     Module(Vec<Expr<'s>>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Default)]
 pub struct Λ<'s>(pub Vec<Expr<'s>>);
+impl std::fmt::Debug for Λ<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &*self.0 {
+            [] => write!(f, "λ()"),
+            [a] => f.write_fmt(format_args!("λ({a:?})")),
+            x => {
+                if x.len() < 5 {
+                    f.write_fmt(format_args!("λ({x:?})"))
+                } else {
+                    write!(f, "λ")?;
+                    f.with_options(*FormattingOptions::new().alternate(true))
+                        .debug_list()
+                        .entries(&self.0)
+                        .finish()
+                }
+            }
+        }
+    }
+}
 
 #[derive(Clone)]
 pub enum Value<'s> {
@@ -29,29 +56,34 @@ pub enum Value<'s> {
 impl std::fmt::Debug for Value<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Float(x) => write!(f, "{x}f"),
-            Self::Int(x) => write!(f, "{x}i"),
+            Self::Float(x) => write!(f, "{x}"),
+            Self::Int(x) => write!(f, "{x}"),
             Self::String(x) => write!(f, "\"{x}\""),
             Self::Unit => write!(f, "()"),
         }
     }
 }
 
-#[derive(Clone, Debug)]
+impl std::fmt::Debug for Expr<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoOp => write!(f, "nop"),
+            Self::Function(x) => x.fmt(f),
+            Self::Value(x) => x.fmt(f),
+            Self::Ident(x) => x.fmt(f),
+            Self::Lambda(x) => x.fmt(f),
+            Self::Let { name, rhs } => write!(f, "let({rhs:?} -> {name})"),
+        }
+    }
+}
+#[derive(Clone)]
 pub enum Expr<'s> {
     NoOp,
     Function(super::fun::Function<'s>),
     Value(Value<'s>),
     Ident(&'s str),
     Lambda(Λ<'s>),
-    Let {
-        name: &'s str,
-        rhs: Box<Expr<'s>>,
-    },
-    If {
-        then: Box<Expr<'s>>,
-        or: Box<Expr<'s>>,
-    },
+    Let { name: &'s str, rhs: Box<Expr<'s>> },
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -79,7 +111,7 @@ impl<T> Spanned<T> {
     pub fn dummy(inner: T) -> Spanned<T> {
         Spanned {
             inner,
-            span: SimpleSpan::new(0, 0),
+            span: SimpleSpan::new((), 0..0),
         }
     }
 

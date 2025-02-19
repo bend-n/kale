@@ -26,7 +26,7 @@ macro_rules! t {
         just(Token::Colon)
     };
     (->) => {
-        just(Token::ThinArrow)
+        just(Token::Place)
     };
     (()) => {
         just(Token::Call)

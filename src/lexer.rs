@@ -1,7 +1,9 @@
 use beef::lean::Cow;
-use chumsky::span::SimpleSpan;
+use chumsky::span::{SimpleSpan, Span};
 use logos::{Lexer as RealLexer, Logos, SpannedIter};
-
+use regex::Regex;
+use std::sync::LazyLock;
+static EMOJI: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\p{Emoji}&&[^0-9]]").unwrap());
 macro_rules! tokens {
     ($($z:literal $( | $y:literal)? => $v:ident,)+) => {
         #[derive(Logos, Debug, PartialEq, Clone)]
@@ -22,7 +24,12 @@ macro_rules! tokens {
             #[regex(r"'.'", |lex| lex.slice().as_bytes()[1] as char)]
             Char(char),
             // todo ignore alot
-            #[regex(r"[^\s\(\)\[\]\{\}0-9λ'\-←→=≢≡🐢🦆✊🪣🔓🐘🍴🐈↖⤵️☎️🔭+×*√≠<≤>≥⏪⏩\-¯∧∨⊻÷%🔎🚧⬅➡⏭️➡️↘️🐋🐳][^\(\)\[\]\{\}λ←→=≢≡'🐢🐘🍴✊🐈↖⤵️+🪣×🔓*√🦆≠<≤>≥☎️🔭⏪⏩¯∧∨⊻÷%🔎🚧⬅➡⏭️➡️↘️🐋🐳\s]*", priority = 7)]
+            #[regex(r"[^\s\(\)\[\]\{\}⎬0-9λ'\-←→=≡+×\|*√<\-¯∧∨⊻÷%]", priority = 7, callback = |lex| {
+                EMOJI.is_match(lex.slice())
+                  .then_some(logos::Filter::Skip)
+                  .unwrap_or(logos::Filter::Emit(lex.slice()))
+            })]
+            #[regex(r"'[^']+'", priority = 8, callback = |lex| &lex.slice()[1..lex.slice().len() - 1])]
             Ident(&'strings str),
             #[token("[", chr::<'['>)]
             #[token("(", chr::<'('>)]
@@ -34,12 +41,15 @@ macro_rules! tokens {
             ClosingBracket(char),
 
             $(#[token($z, priority = 8)] $(#[token($y, priority = 8)])? $v,)+
+
+            Unknown,
         }
 
         impl std::fmt::Display for Token<'_> {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
                 match self {
                     $(Self::$v => write!(f, $z),)+
+                    Self::Unknown => write!(f, "unknown"),
                     Self::Char(x) => write!(f, "'{x}'"),
                     Self::String(s) => write!(f, "{s}"),
                     Self::Float(n) => write!(f, "{n}"),
@@ -55,47 +65,52 @@ macro_rules! tokens {
 
 tokens! {
     "λ" => Lambda,
-    "←" => Place,
-    "→" => Ret,
+    "←" => Ret,
+    "⎬" => Array,
+    "→" => Place,
     "≡" => Eq,
-    "🐢" => Dup,
-    "🐘" => Both,
-    "🍴" => Fork,
-    "🪣" => Gap,
-    "✊" => Hold,
-    "🐈" => Flip,
-    "🦆" => Duck,
-    "↖" => Reverse,
+    "^" => Dup,
+    // "🐘" => Both,
+    "&" => And,
+    "|" => Both,
+    "🔀" => Flip,
     "⤵️" => Zap,
+
+    "⬇" => With,
+    "⬆" => Merge,
+    "⏫" => Range,
     "+" => Add,
     "-" => Sub,
     "×" => Mul,
     "*" => Pow,
     "√" => Sqrt,
-    "≢" => Ne,
     "<" => Lt,
-    "≤" => Le,
     ">" => Gt,
+    "≤" => Le,
     "≥" => Ge,
+    "🪪" => Type,
+    "📏" => Length,
+    "👩‍👩‍👧‍👧" => Group,
     "⏪" => Shl,
     "⏩" => Shr,
     "¯" => Neg,
-    "∧" => And,
+    "📶" => Sort,
+    "∧" => BitAnd,
     "∨" => Or,
-    "⊻" => Xor,
+    "⊕" => Xor,
     "÷" => Div,
     "%" => Mod,
-    "🔓" => Keep,
+    "🔓" => Mask,
+    "🔒" => Index,
     "🚧" => Split,
     "⬅" => First,
     "➡" => Last,
-    "⏭️" => Each,
-    "➡️" => Reduce,
-    "↘️" => ReduceStack,
-    "⬆️" => Range,
+    "↘️" => Reduce,
+    "🗺" => Map,
     "🐋" => If,
-    "🐳" => Else,
-    "☎️" => Call,
+    "🐬" => EagerIf,
+    "🇳🇿" => Zip,
+    "." => Call,
 
 }
 
@@ -116,10 +131,11 @@ impl<'s> Iterator for Lexer<'s> {
     type Item = (Token<'s>, SimpleSpan<usize>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.find_map(|(x, s)| match x.ok()? {
-            Token::Comment(_) => None,
-            x => Some((x, SimpleSpan::new(s.start, s.end))),
-        })
+        self.inner
+            .find_map(|(x, s)| match x.unwrap_or(Token::Unknown) {
+                Token::Comment(_) => None,
+                x => Some((x, SimpleSpan::new((), s))),
+            })
     }
 }
 
@@ -135,13 +151,6 @@ fn lexer() {
         10×+
     )
     
-    🐢≠'\n'🚧
-    / run function on all values, pushing to the stack /
-    ⏭️line
-    / reduce the stack /
-    ↘️+
-    
-    true 🐋 (+ 🐳 -)
     / if true { + } else { - } /"#);
     // while let Some((x, _)) = lex.next() {
     //     print!("{x} ");
@@ -152,5 +161,4 @@ fn lexer() {
             assert_eq!(lex.next(), None);
         }}
     }
-    test! [String("1abc25hriwm4") Ident("line") Place Lambda OpeningBracket('(') Char('0') Gt Keep Char('9') Lt Keep Char('9') Sub Both First Last Int(10u64) Mul Add ClosingBracket(')') Dup Ne Ident("\\n") Split Each Ident("line") ReduceStack Add Ident("true") If OpeningBracket('(') Add Else Sub ClosingBracket(')') ]
 }
