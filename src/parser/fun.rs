@@ -1,18 +1,18 @@
 use super::types::*;
 use super::util::*;
 use crate::lexer::Token;
-use chumsky::{prelude::*, Parser};
+use chumsky::{Parser, prelude::*};
 
 #[derive(Debug, Clone)]
-enum NumberΛ<'s> {
+pub enum NumberΛ<'s> {
     Number(u64),
-    Λ(Λ<'s>),
+    Λ(Spanned<Λ<'s>>),
 }
 
 #[derive(Debug, Clone)]
 pub enum Function<'s> {
     Both(Λ<'s>),
-    And(Λ<'s>, Λ<'s>),
+    And(Spanned<Λ<'s>>, Spanned<Λ<'s>>),
     If { then: Λ<'s>, or: Λ<'s> },
     Array(Option<NumberΛ<'s>>),
     Map(Λ<'s>),
@@ -27,6 +27,7 @@ pub enum Function<'s> {
     Mul,
     Pow,
     Type,
+    Ne,
     Merge,
     Sqrt,
     Lt,
@@ -59,11 +60,11 @@ pub enum Function<'s> {
 }
 
 impl<'s> Λ<'s> {
-    pub fn parse(exp: parser![Expr<'s>]) -> parser![Self] {
+    pub fn parse(exp: parser![Spanned<Expr<'s>>]) -> parser![Spanned<Self>] {
         exp.repeated()
             .collect()
             .delimited_by(t!['('], t![')'])
-            .map(|x| Self(x))
+            .map_with(|x, e| Spanned::from((Self(x), e.span())))
             .labelled("lambda")
     }
 }
@@ -82,6 +83,7 @@ impl<'s> Function<'s> {
             Token::Pow => Pow,
             Token::Sqrt => Sqrt,
             Token::Lt => Lt,
+            Token::Not => Not,
             Token::Index => Index,
             Token::Merge => Merge,
             Token::Shl => Shl,
@@ -104,6 +106,7 @@ impl<'s> Function<'s> {
             Token::With => With,
             Token::Split => Split,
             Token::First => First,
+            Token::Ne => Ne,
             Token::Type => Type,
             Token::Last => Last,
             Token::Ident(x) => Ident(x),
@@ -112,7 +115,7 @@ impl<'s> Function<'s> {
 
         let fn_param = choice((
             basic
-                .map(|x| Λ(vec![Expr::Function(x)]))
+                .map_with(|x, e| Λ(vec![Expr::Function(x).spun(e.span())]))
                 .labelled("function"),
             λ.clone(),
         ))
@@ -131,7 +134,8 @@ impl<'s> Function<'s> {
             ($name:ident) => {
                 fn_param
                     .clone()
-                    .then(fn_param.clone())
+                    .map_with(spanned!())
+                    .then(fn_param.clone().map_with(spanned!()))
                     .then_ignore(just(Token::$name))
                     .map(|(a, b)| $name(a, b))
                     .labelled(stringify!($name))
@@ -142,18 +146,23 @@ impl<'s> Function<'s> {
             one![Both],
             one![Reduce],
             one![Map],
-            λ.clone().then_ignore(just(Token::Group)).map(Group),
-            just(Token::Array)
-                .ignore_then(
+            λ.clone()
+                .then_ignore(just(Token::Group).labelled("group"))
+                .map(Group),
+            choice((
+                just(Token::Array).ignore_then(
                     fn_param
                         .clone()
+                        .map_with(spanned!())
                         .map(NumberΛ::Λ)
-                        .or(select! { Token::Int(x) => NumberΛ::Number(x)}),
-                )
-                .map(Some)
-                .map(Array)
-                .labelled("array")
-                .boxed(),
+                        .or(select! { Token::Int(x) => NumberΛ::Number(x) })
+                        .map(Some)
+                        .map(Array),
+                ),
+                just(Token::Array).map(|_| Array(None)),
+            ))
+            .labelled("array")
+            .boxed(),
             fn_param
                 .clone()
                 .then(fn_param.clone())

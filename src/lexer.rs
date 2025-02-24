@@ -10,7 +10,7 @@ macro_rules! tokens {
         #[logos(skip r"[\n\s]+")]
         #[allow(dead_code)]
         pub enum Token<'strings> {
-            #[regex("/[^\n/]+/", priority = 8)]
+            #[regex("/[^\n/]+/?", priority = 8)]
             Comment(&'strings str),
             #[regex(r"[0-9]+", |lex| lex.slice().parse().ok())]
             #[regex(r"0[xX][0-9a-fA-F]+", |lex| u64::from_str_radix(&lex.slice()[2..], 16).ok())]
@@ -24,12 +24,12 @@ macro_rules! tokens {
             #[regex(r"'.'", |lex| lex.slice().as_bytes()[1] as char)]
             Char(char),
             // todo ignore alot
-            #[regex(r"[^\s\(\)\[\]\{\}⎬0-9λ'\-←→=≡+×\|*√<\-¯∧∨⊻÷%]", priority = 7, callback = |lex| {
+            #[regex(r"[^\s\(\)\[\]\{\}⎬0-9λ'\-←→=≢≡+×\|*√<\-¯∧∨⊻÷%]", priority = 7, callback = |lex| {
                 EMOJI.is_match(lex.slice())
                   .then_some(logos::Filter::Skip)
                   .unwrap_or(logos::Filter::Emit(lex.slice()))
             })]
-            #[regex(r"'[^']+'", priority = 8, callback = |lex| &lex.slice()[1..lex.slice().len() - 1])]
+            #[regex(r"'[^'0-9][^']+'", priority = 8, callback = |lex| &lex.slice()[1..lex.slice().len() - 1])]
             Ident(&'strings str),
             #[token("[", chr::<'['>)]
             #[token("(", chr::<'('>)]
@@ -65,12 +65,11 @@ macro_rules! tokens {
 
 tokens! {
     "λ" => Lambda,
-    "←" => Ret,
     "⎬" => Array,
     "→" => Place,
     "≡" => Eq,
+    "≢" => Ne,
     "^" => Dup,
-    // "🐘" => Both,
     "&" => And,
     "|" => Both,
     "🔀" => Flip,
@@ -88,6 +87,8 @@ tokens! {
     ">" => Gt,
     "≤" => Le,
     "≥" => Ge,
+    "÷" => Div,
+    "%" => Mod,
     "🪪" => Type,
     "📏" => Length,
     "👩‍👩‍👧‍👧" => Group,
@@ -97,9 +98,8 @@ tokens! {
     "📶" => Sort,
     "∧" => BitAnd,
     "∨" => Or,
+    "!" => Not,
     "⊕" => Xor,
-    "÷" => Div,
-    "%" => Mod,
     "🔓" => Mask,
     "🔒" => Index,
     "🚧" => Split,
@@ -110,6 +110,7 @@ tokens! {
     "🐋" => If,
     "🐬" => EagerIf,
     "🇳🇿" => Zip,
+    "🧐" => Debug,
     "." => Call,
 
 }

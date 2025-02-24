@@ -1,6 +1,6 @@
 pub mod types;
 use crate::lexer::{Lexer, Token};
-use chumsky::{input::Stream, prelude::*, Parser};
+use chumsky::{Parser, input::Stream, prelude::*};
 pub mod fun;
 pub mod util;
 use types::*;
@@ -9,37 +9,42 @@ use util::*;
 use self::fun::Function;
 
 impl<'s> Value<'s> {
-    pub fn parse() -> parser![Self] {
+    pub fn parse() -> parser![Spanned<Self>] {
         select! {
             Token::Char(x) => Value::Int(x as _),
             Token::Int(x) => Value::Int(x),
             Token::Float(x) => Value::Float(x),
             Token::String(s) => Value::String(s),
         }
+        .map_with(spanned!())
         .labelled("value")
     }
 }
 
 impl<'s> Expr<'s> {
-    pub fn parse() -> parser![Self] {
-        recursive::<_, Expr, _, _, _>(|expr| {
-            let inline_expr = Value::parse().map(Expr::Value);
+    pub fn parse() -> parser![Spanned<Expr<'s>>] {
+        recursive(|expr| {
+            let inline_expr: parser![Spanned<Expr>] = Value::parse().map(|x| x.map(Expr::Value));
 
             let λ = Λ::parse(expr.clone());
-
             choice((
                 inline_expr,
-                Function::parse(λ.clone()).map(Expr::Function),
-                λ.map(Expr::Lambda),
+                Function::parse(λ.clone().map(Spanned::unspan()))
+                    .map(Expr::Function)
+                    .map_with(spanned!()),
+                λ.map(|x| x.map(|x| Expr::Value(Value::Lambda(x)))),
             ))
             .labelled("expr")
         })
     }
 }
-impl<'s> Ast<'s> {
-    pub fn parse() -> parser![Self] {
-        Expr::parse().repeated().collect().map(Ast::Module)
-    }
+
+pub fn top<'s>() -> parser![Spanned<Λ<'s>>] {
+    Expr::parse()
+        .repeated()
+        .collect()
+        .map(Λ)
+        .map_with(spanned!())
 }
 
 #[test]
@@ -51,7 +56,7 @@ fn parse_expr() {
         "{:?}",
         crate::lexer::lex(src).map(|x| x.0).collect::<Vec<_>>()
     );
-    parse_s(src, Ast::parse());
+    parse_s(src, top());
 }
 
 pub fn stream(lexer: Lexer<'_>, len: usize) -> types::Input<'_> {

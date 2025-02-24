@@ -18,13 +18,8 @@ pub type Input<'s> = MappedInput<
     fn((Token<'_>, SimpleSpan)) -> (Token<'_>, SimpleSpan),
 >;
 
-#[derive(Debug)]
-pub enum Ast<'s> {
-    Module(Vec<Expr<'s>>),
-}
-
 #[derive(Clone, Default)]
-pub struct Λ<'s>(pub Vec<Expr<'s>>);
+pub struct Λ<'s>(pub Vec<Spanned<Expr<'s>>>);
 impl std::fmt::Debug for Λ<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &*self.0 {
@@ -50,7 +45,7 @@ pub enum Value<'s> {
     Float(f64),
     Int(u64),
     String(Cow<'s, str>),
-    Unit,
+    Lambda(Λ<'s>),
 }
 
 impl std::fmt::Debug for Value<'_> {
@@ -59,7 +54,7 @@ impl std::fmt::Debug for Value<'_> {
             Self::Float(x) => write!(f, "{x}"),
             Self::Int(x) => write!(f, "{x}"),
             Self::String(x) => write!(f, "\"{x}\""),
-            Self::Unit => write!(f, "()"),
+            Self::Lambda(s) => s.fmt(f),
         }
     }
 }
@@ -67,29 +62,32 @@ impl std::fmt::Debug for Value<'_> {
 impl std::fmt::Debug for Expr<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NoOp => write!(f, "nop"),
             Self::Function(x) => x.fmt(f),
             Self::Value(x) => x.fmt(f),
-            Self::Ident(x) => x.fmt(f),
-            Self::Lambda(x) => x.fmt(f),
-            Self::Let { name, rhs } => write!(f, "let({rhs:?} -> {name})"),
         }
     }
 }
+
 #[derive(Clone)]
 pub enum Expr<'s> {
-    NoOp,
     Function(super::fun::Function<'s>),
     Value(Value<'s>),
-    Ident(&'s str),
-    Lambda(Λ<'s>),
-    Let { name: &'s str, rhs: Box<Expr<'s>> },
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone)]
 pub struct Spanned<T> {
+    pub(crate) span: SimpleSpan,
     pub inner: T,
-    pub span: Span,
+}
+impl<T: std::fmt::Debug> std::fmt::Debug for Spanned<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.inner.fmt(f)
+    }
+}
+impl<T> Spanned<T> {
+    fn new(inner: T, span: SimpleSpan) -> Self {
+        Self { inner, span }
+    }
 }
 
 impl<T> Deref for Spanned<T> {
@@ -101,11 +99,23 @@ impl<T> Deref for Spanned<T> {
 }
 
 impl<T> Spanned<T> {
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Spanned<U> {
+    pub fn map<U>(self, f: impl Fn(T) -> U) -> Spanned<U> {
         Spanned {
             inner: f(self.inner),
             span: self.span,
         }
+    }
+
+    pub fn unspan() -> impl Fn(Spanned<T>) -> T + Copy {
+        |x| x.inner
+    }
+
+    pub fn span(&self) -> SimpleSpan {
+        self.span
+    }
+    pub fn raw(self) -> (T, SimpleSpan) {
+        let Spanned { inner, span } = self;
+        (inner, span)
     }
 
     pub fn dummy(inner: T) -> Spanned<T> {

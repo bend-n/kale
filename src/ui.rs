@@ -1,13 +1,40 @@
+use crate::exec::Error as ExecutionError;
 use crate::parser::types::Error;
-use chumsky::{error::RichReason, prelude::*};
-use codespan_reporting::diagnostic::LabelStyle::{Primary, Secondary};
+use chumsky::error::RichReason;
+use codespan_reporting::diagnostic::LabelStyle::{self, Primary, Secondary};
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::files::SimpleFiles;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 
 use codespan_reporting::term::Chars;
 use comat::cformat as cmt;
-use itertools::Itertools;
+
+pub fn display_execution<T>(x: Result<T, ExecutionError>, code: &str) -> T {
+    let e = match x {
+        Ok(x) => return x,
+        Err(e) => e,
+    };
+    let mut files = SimpleFiles::new();
+    files.add("x.kale", code);
+    let mut d = Diagnostic::<usize>::new(codespan_reporting::diagnostic::Severity::Error)
+        .with_message(e.name)
+        .with_label(
+            Label::new(LabelStyle::Primary, 0, e.message.span()).with_message(e.message.raw().0),
+        );
+    for label in e.labels {
+        d = d.with_label(
+            Label::new(LabelStyle::Secondary, 0, label.span()).with_message(label.raw().0),
+        );
+    }
+
+    d = d.with_notes(e.notes);
+
+    let writer = StandardStream::stderr(ColorChoice::Always);
+    let mut config = codespan_reporting::term::Config::default();
+    config.chars = Chars::box_drawing();
+    codespan_reporting::term::emit(&mut writer.lock(), &config, &files, &d).unwrap();
+    std::process::exit(2);
+}
 
 pub fn display<T>(result: Result<T, Vec<Error>>, code: &str) -> Result<T, ()> {
     let e = match result {
@@ -48,8 +75,6 @@ pub fn display<T>(result: Result<T, Vec<Error>>, code: &str) -> Result<T, ()> {
               //     };
               // }
         }
-        dbg!(e.contexts().collect::<Vec<_>>());
-
         for (l, span) in e.contexts() {
             d = d.with_label(Label {
                 style: Secondary,
@@ -67,7 +92,6 @@ pub fn display<T>(result: Result<T, Vec<Error>>, code: &str) -> Result<T, ()> {
         let writer = StandardStream::stderr(ColorChoice::Always);
         let mut config = codespan_reporting::term::Config::default();
         config.chars = Chars::box_drawing();
-
         codespan_reporting::term::emit(&mut writer.lock(), &config, &files, &d).unwrap();
     }
     Err(())

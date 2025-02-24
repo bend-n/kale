@@ -1,13 +1,16 @@
-#![feature(iter_intersperse, formatting_options)]
-
-use parser::types::Ast;
+#![feature(
+    iter_intersperse,
+    formatting_options,
+    impl_trait_in_bindings,
+    arbitrary_self_types
+)]
 mod array;
+mod exec;
 mod lexer;
 mod parser;
 mod ui;
 fn main() {
-    parser::parse_s(
-        &std::fs::read_to_string(std::env::args().nth(1).unwrap()).unwrap(),
-        Ast::parse(),
-    );
+    let x = std::fs::read_to_string(std::env::args().nth(1).unwrap()).unwrap();
+    let y = parser::parse_s(&x, parser::top());
+    exec::exec(y, &x);
 }
