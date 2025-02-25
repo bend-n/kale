@@ -1,9 +1,6 @@
-use std::{
-    fmt::{Debug, FormattingOptions},
-    ops::Deref,
-};
+use std::{fmt::FormattingOptions, ops::Deref};
 
-use crate::lexer::Token;
+use crate::{exec::Argc, lexer::Token};
 use beef::lean::Cow;
 use chumsky::{
     input::{MappedInput, Stream},
@@ -19,7 +16,16 @@ pub type Input<'s> = MappedInput<
 >;
 
 #[derive(Clone, Default)]
-pub struct Λ<'s>(pub Vec<Spanned<Expr<'s>>>);
+pub struct Λ<'s>(pub Vec<Spanned<Expr<'s>>>, Argc);
+impl<'s> Λ<'s> {
+    pub fn of(x: Vec<Spanned<Expr<'s>>>) -> Self {
+        let s = Λ::sized(&x);
+        Self(x, s)
+    }
+    pub fn argc(&self) -> Argc {
+        self.1
+    }
+}
 impl std::fmt::Debug for Λ<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &*self.0 {

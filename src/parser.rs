@@ -43,7 +43,7 @@ pub fn top<'s>() -> parser![Spanned<Λ<'s>>] {
     Expr::parse()
         .repeated()
         .collect()
-        .map(Λ)
+        .map(Λ::of)
         .map_with(spanned!())
 }
 

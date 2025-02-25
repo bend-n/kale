@@ -64,7 +64,7 @@ impl<'s> Λ<'s> {
         exp.repeated()
             .collect()
             .delimited_by(t!['('], t![')'])
-            .map_with(|x, e| Spanned::from((Self(x), e.span())))
+            .map_with(|x, e| Spanned::from((Self::of(x), e.span())))
             .labelled("lambda")
     }
 }
@@ -115,7 +115,7 @@ impl<'s> Function<'s> {
 
         let fn_param = choice((
             basic
-                .map_with(|x, e| Λ(vec![Expr::Function(x).spun(e.span())]))
+                .map_with(|x, e| Λ::of(vec![Expr::Function(x).spun(e.span())]))
                 .labelled("function"),
             λ.clone(),
         ))

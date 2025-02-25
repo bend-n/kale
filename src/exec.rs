@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, VecDeque},
     fmt::Display,
     mem::take,
-    ops::{Add, Sub, SubAssign},
+    ops::{Add, AddAssign, Sub, SubAssign},
 };
 
 use chumsky::span::SimpleSpan;
@@ -12,8 +12,8 @@ use crate::parser::{
     types::*,
     util::Spanner,
 };
-#[derive(Clone, Copy, PartialEq)]
-struct Argc {
+#[derive(Clone, Copy, PartialEq, Default)]
+pub struct Argc {
     input: usize,
     output: usize,
 }
@@ -38,7 +38,7 @@ impl Argc {
 #[derive(Clone)]
 pub enum Val<'s> {
     Array(Vec<Val<'s>>),
-    Lambda(Λ<'s>, Argc),
+    Lambda(Λ<'s>),
     Int(i128),
     Float(f64),
 }
@@ -124,7 +124,7 @@ impl std::fmt::Debug for Val<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Array(x) => x.fmt(f),
-            Self::Lambda(x, _) => x.fmt(f),
+            Self::Lambda(x) => x.fmt(f),
             Self::Int(x) => write!(f, "{x}"),
             Self::Float(x) => write!(f, "{x}"),
         }
@@ -240,56 +240,54 @@ impl<T> Annotate for Result<T, Error> {
 #[test]
 fn x() {
     assert!(
-        size_lambda(crate::parser::parse_s("5 + 1 2 ×", crate::parser::top()).inner)
-            == Argc::takes(1).into(2)
+        crate::parser::parse_s("5 + 1 2 ×", crate::parser::top()).argc() == Argc::takes(1).into(2)
     );
-    assert!(
-        size_lambda(crate::parser::parse_s("¯", crate::parser::top()).inner)
-            == Argc::takes(1).into(1)
-    );
+    assert!(crate::parser::parse_s("¯", crate::parser::top()).argc() == Argc::takes(1).into(1));
 }
 
-impl SubAssign<Argc> for Argc {
-    fn sub_assign(&mut self, rhs: Argc) {
+impl Add<Argc> for Argc {
+    type Output = Self;
+    fn add(mut self, rhs: Argc) -> Self {
         match self.output.checked_sub(rhs.input) {
-            Some(x) => {
-                self.output = x + rhs.output;
-            }
+            Some(x) => self.output = x + rhs.output,
+            // borrow inputs
             None => {
                 self.input += rhs.input - self.output;
                 self.output = rhs.output;
             }
         }
+        self
     }
 }
 
-fn size_lambda<'s>(lambda: Λ<'s>) -> Argc {
-    let mut a = Argc {
-        input: 0,
-        output: 0,
-    };
-    // 5               +         1  2        *
-    // { 0, 1 } -> { 1, 1 } -> { 1, 3 } -> { 1, 2 }
-    for elem in lambda.0 {
-        let x = format!("{elem:?}");
-        a -= match elem.inner {
-            Expr::Function(function) => {
-                use Function::*;
-                match function {
-                    Add | Mul | Div | Xor | Mod | Pow => Argc::takes(2).into(1),
-                    Neg => Argc::takes(1).into(1),
-                    _ => Argc {
-                        input: 0,
-                        output: 0,
-                    },
-                }
-            }
-            Expr::Value(_) => Argc::produces(1),
-        };
-        println!("{x} → {a:?}");
+fn size_fn<'s>(f: &Function<'s>) -> Argc {
+    use Function::*;
+    match f {
+        Add | Mul | Div | Xor | Mod | Pow | Eq | Ne | BitAnd | Or => Argc::takes(2).into(1),
+        Neg | Sqrt | Not => Argc::takes(1).into(1),
+        _ => Argc {
+            input: 0,
+            output: 0,
+        },
     }
-    a
 }
+
+fn size_expr<'s>(x: &Expr<'s>) -> Argc {
+    match x {
+        Expr::Function(function) => size_fn(function),
+        Expr::Value(_) => Argc::produces(1),
+    }
+}
+
+impl<'s> Λ<'s> {
+    pub fn sized(x: &[Spanned<Expr<'s>>]) -> Argc {
+        // 5             + (borrows) 1  2        *
+        // { 0, 1 } -> { 1, 1 } -> { 1, 3 } -> { 1, 2 }
+        x.iter()
+            .fold(Argc::takes(0).into(0), |acc, x| acc + size_expr(&x.inner))
+    }
+}
+
 fn exec_lambda<'s>(
     x: Spanned<Λ<'s>>,
     c: &mut Context<'s, '_>,
@@ -311,7 +309,7 @@ fn exec_lambda<'s>(
                         .clone()
                         .raw();
                     match x {
-                        Val::Lambda(x, _) => {
+                        Val::Lambda(x) => {
                             exec_lambda(x.spun(span), &mut Context::inherits(c), stack)?
                         }
                         x => stack.push(x.spun(span)),
@@ -331,13 +329,7 @@ fn exec_lambda<'s>(
                         Value::String(x) => {
                             Val::Array(x.bytes().map(|x| Val::Int(x as i128)).collect())
                         }
-                        Value::Lambda(x) => Val::Lambda(
-                            x,
-                            Argc {
-                                input: 0,
-                                output: 0,
-                            },
-                        ),
+                        Value::Lambda(x) => Val::Lambda(x),
                     }
                     .spun(span),
                 );
@@ -590,29 +582,24 @@ impl<'s> Function<'s> {
             }
             // basically ⎬^⎬2 (x)🗺
             Self::And(x, y) => {
-                println!("exec and");
-                let n = stack.curr().len();
-                let mut a = stack.clone();
-                exec_lambda(x, &mut Context::inherits(c), &mut a)?;
-                let delta = -1;
-                let mut x =
-                    a.0.pop()
-                        .unwrap()
-                        .drain((n as i64 + delta) as usize..)
-                        .collect::<Vec<_>>();
+                let xargs = x.argc();
+                let yargs = y.argc();
+                let requires = yargs.input.max(xargs.input);
 
-                let mut a = stack.clone();
+                let n = stack.curr().len();
+                let s = Stack(vec![stack.curr().drain(n - requires..).collect::<Vec<_>>()]);
+                let mut a = s.clone();
+                exec_lambda(x, &mut Context::inherits(c), &mut a)?;
+                let n = a.curr().len();
+                let x = a.curr().drain(n - xargs.output..);
+
+                let mut a = s.clone();
                 exec_lambda(y, &mut Context::inherits(c), &mut a)?;
-                let delta = -1;
-                let mut y =
-                    a.0.pop()
-                        .unwrap()
-                        .drain((n as i64 + delta) as usize..)
-                        .collect::<Vec<_>>();
-                stack.curr().truncate(n - 1);
-                // pain (TODO: argc???)
-                stack.push(x.pop().unwrap());
-                stack.push(y.pop().unwrap());
+                let n = a.curr().len();
+                let y = a.curr().drain(n - yargs.output..);
+
+                stack.curr().extend(x);
+                stack.curr().extend(y);
             }
             _ => (),
         }
