@@ -20,6 +20,11 @@ pub type Input<'s> = MappedInput<
 
 #[derive(Clone, Default)]
 pub struct Λ<'s>(pub Vec<Spanned<Expr<'s>>>, Argc);
+impl PartialEq for Λ<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.1 == other.1
+    }
+}
 impl<'s> Λ<'s> {
     pub fn of(x: Vec<Spanned<Expr<'s>>>) -> Self {
         let s = Λ::sized(&x);

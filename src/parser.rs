@@ -50,8 +50,7 @@ pub fn top<'s>() -> parser![Spanned<Λ<'s>>] {
 #[test]
 fn parse_expr() {
     // parse_s("a ← λ ( +-🍴 )", Expr::parse());
-    let src = r#"⏫⏫⏫
-    "#;
+    let src = r#"+↘️"#;
     println!(
         "{:?}",
         crate::lexer::lex(src).map(|x| x.0).collect::<Vec<_>>()

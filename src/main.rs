@@ -1,6 +1,7 @@
 #![feature(
     try_trait_v2,
     iter_intersperse,
+    iterator_try_reduce,
     formatting_options,
     impl_trait_in_bindings,
     arbitrary_self_types

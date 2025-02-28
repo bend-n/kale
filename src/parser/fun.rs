@@ -45,7 +45,7 @@ pub enum Function<'s> {
     Mod,
     Index,
     Mask,
-    Group(Λ<'s>),
+    Group,
     Split,
     Open,
     First,
@@ -88,6 +88,7 @@ impl<'s> Function<'s> {
             Token::Index => Index,
             Token::Merge => Merge,
             Token::Shl => Shl,
+            Token::Group => Group,
             Token::Shr => Shr,
             Token::Neg => Neg,
             Token::Eq => Eq,
@@ -149,9 +150,6 @@ impl<'s> Function<'s> {
             one![Reduce],
             one![Map],
             one![With],
-            λ.clone()
-                .then_ignore(just(Token::Group).labelled("group"))
-                .map(Group),
             choice((
                 just(Token::ArrayN).ignore_then(
                     fn_param

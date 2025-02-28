@@ -5,6 +5,8 @@ use crate::parser::{
     util::Spanner,
 };
 use chumsky::span::{SimpleSpan, Span as _};
+use itertools::Itertools;
+use std::mem::take;
 use std::{
     collections::HashMap,
     fmt::Display,
@@ -34,7 +36,7 @@ impl Argc {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum Array {
     Array(Vec<Array>),
     Int(Vec<i128>),
@@ -47,6 +49,12 @@ impl Array {
             Array::Int(_) => "int",
             Array::Float(_) => "float",
         }
+    }
+    fn assert_int(self: Spanned<Array>, span: Span) -> Result<Spanned<Vec<i128>>> {
+        self.try_map(|x, s| match x {
+            Array::Int(x) => Ok(x),
+            x => Err(Error::ef(span, "array[int]", x.ty().spun(s))),
+        })
     }
 }
 
@@ -207,7 +215,7 @@ impl Array {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum Val<'s> {
     Array(Array),
     Lambda(Λ<'s>),
@@ -326,10 +334,9 @@ impl<'s, 'v> Context<'s, 'v> {
     }
 }
 pub fn exec(x: Spanned<Λ<'_>>, code: &str) {
-    crate::ui::display_execution(
-        exec_lambda(x, &mut Context::default(), &mut Stack::new()),
-        code,
-    );
+    let mut s = Stack::new();
+    crate::ui::display_execution(exec_lambda(x, &mut Context::default(), &mut s), code);
+    println!("{s:?}");
 }
 impl std::fmt::Debug for Stack<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -446,6 +453,10 @@ fn x() {
     );
     assert!(crate::parser::parse_s("¯", crate::parser::top()).argc() == Argc::takes(1).into(1));
     assert!(crate::parser::parse_s("0≥", crate::parser::top()).argc() == Argc::takes(1).into(1));
+    assert_eq!(
+        crate::parser::parse_s("'0'-^9≤🔓0 1¯⎦2🔒(10×+)⬇", crate::parser::top()).argc(),
+        Argc::takes(1).into(1)
+    );
 }
 
 impl Add<Argc> for Argc {
@@ -466,15 +477,19 @@ impl Add<Argc> for Argc {
 fn size_fn<'s>(f: &Function<'s>) -> Argc {
     use Function::*;
     match f {
-        Index | Add | Mul | Div | Xor | Mod | Pow | Eq | Ne | BitAnd | Or | Ge | Le | Lt | Gt => {
-            Argc::takes(2).into(1)
-        }
+        Mask | Group | Index | Sub | Add | Mul | Div | Xor | Mod | Pow | Eq | Ne | BitAnd | Or
+        | Ge | Le | Lt | Gt => Argc::takes(2).into(1),
+        Reduce(_) => Argc::takes(1).into(1),
         With(x) => Argc::takes(1).into(x.argc().output),
+        Map(x) => Argc::takes(1 + (x.argc().input.saturating_sub(1))).into(1),
         Open | Neg | Sqrt | Not => Argc::takes(1).into(1),
         Flip => Argc::takes(2).into(2),
         Dup => Argc::takes(1).into(2),
         Zap => Argc::takes(1).into(0),
-        Mask => Argc::takes(2).into(1),
+        Array(None) => {
+            Argc::takes(5 /*all */).into(1)
+        }
+        Array(Some(NumberΛ::Number(x))) => Argc::takes(*x as _).into(1),
         // With => Argc::takes(1).into(),
         And(a, b) => {
             Argc::takes(a.argc().input.max(b.argc().input)).into(a.argc().output + b.argc().output)
@@ -556,7 +571,6 @@ fn exec_lambda<'s>(
             }
         }
     }
-    println!("{stack:?}");
     Ok(())
 }
 
@@ -775,6 +789,8 @@ impl<'s> Function<'s> {
             Self::Lt => concrete_ab!(<),
             Self::Gt => concrete_ab!(>),
             Self::Le => concrete_ab!(<=),
+            Self::Eq => concrete_ab!(==),
+            Self::Ne => concrete_ab!(!=),
             Self::Ge => concrete_ab!(>=),
             Self::Not => unary_num!(!),
             Self::Neg => unary!(-),
@@ -810,8 +826,8 @@ impl<'s> Function<'s> {
             Self::Flip => {
                 let x = pop!();
                 let y = pop!();
-                stack.push(y);
                 stack.push(x);
+                stack.push(y);
             }
             Self::And(x, y) => {
                 let xargs = x.argc();
@@ -830,13 +846,13 @@ impl<'s> Function<'s> {
                 stack.extend(x);
                 stack.extend(y);
             }
-            Self::Both(x) => {
-                let xargs = x.argc();
+            Self::Both(λ) => {
+                let xargs = λ.argc();
                 let mut a = Stack::of(stack.take(xargs.input));
-                exec_lambda(x.clone(), &mut Context::inherits(c), &mut a)?;
+                exec_lambda(λ.clone(), &mut Context::inherits(c), &mut a)?;
 
                 let mut b = Stack::of(stack.take(xargs.input));
-                exec_lambda(x, &mut Context::inherits(c), &mut b)?;
+                exec_lambda(λ, &mut Context::inherits(c), &mut b)?;
 
                 stack.extend(b.take(xargs.output));
                 stack.extend(a.take(xargs.output));
@@ -871,10 +887,7 @@ impl<'s> Function<'s> {
                 stack.extend(a.drain(..));
             }
             Self::Index => {
-                let index = pop!().assert_array(span)?.try_map(|x, s| match x {
-                    Array::Int(x) => Ok(x),
-                    x => Err(Error::ef(span, "array[int]", x.ty().spun(s))),
-                })?;
+                let index = pop!().assert_array(span)?.assert_int(span)?;
                 let array = pop!().assert_array(span)?;
                 let out = each!(
                     array.inner,
@@ -919,6 +932,84 @@ impl<'s> Function<'s> {
                     ))
                     .spun(x.span),
                 );
+            }
+            // like mask but separating
+            Self::Group => {
+                let elem = pop!().assert_array(span)?.assert_int(span)?;
+                let array = pop!().assert_array(span)?;
+                if elem.len() != array.len() {
+                    return Err(Error {
+                        name: "argument length mismatch".to_string(),
+                        message: "for this function".to_string().spun(span),
+                        labels: vec![],
+                        notes: vec![],
+                    }
+                    .label("first argument".spun(elem.span))
+                    .label("second argument".spun(array.span)));
+                }
+                stack.push(
+                    Val::Array(each!(array.inner, |a| {
+                    let mut chunked = Vec::with_capacity(32);
+                    let mut chunk = Vec::with_capacity(32);
+                    for (e, x) in elem.iter().copied().zip(a) {
+                        if e == 1 {
+                            chunk.push(x);
+                        } else if !chunk.is_empty() {
+                            chunked.push(Array::from(take(&mut chunk)));
+                        }
+                    }
+                    if !chunk.is_empty() {
+                        chunked.push(Array::from(take(&mut chunk)));
+                    }
+                    Array::Array(chunked)
+                }, Vec<_> => Array))
+                    .spun(span),
+                );
+            }
+            Self::Map(λ) => {
+                if λ.argc().output != 1 {
+                    return Err(Error {
+                        name: "parameter to 🗺 does not return 1 value".to_string(),
+                        message: λ.map(|λ| format!("return {}", λ.argc().output)),
+                        ..Default::default()
+                    });
+                }
+                let x = pop!().assert_array(span)?;
+                let s = Stack::of(stack.take(λ.argc().input.saturating_sub(1)));
+                stack.push(
+                    Val::Array(Array::new(
+                        span,
+                        x.iter()
+                            .map(|x| {
+                                let mut stack = s.clone();
+                                stack.push(x.spun(span));
+                                exec_lambda(λ.clone(), &mut Context::inherits(c), &mut stack)
+                                    .map(|()| stack.pop().expect("calculations failed"))
+                            })
+                            .collect::<Result<Vec<_>>>()?,
+                    )?)
+                    .spun(span),
+                );
+            }
+            Self::Reduce(λ) => {
+                let a = pop!().assert_array(span)?;
+                assert!(λ.argc().output == 1);
+                assert!(λ.argc().input >= 2);
+                if λ.argc().input == 2 {
+                    stack.push(
+                        a.iter()
+                            .map(|x| -> Val<'s> { x })
+                            .try_reduce(|x, y| {
+                                let mut s = Stack::of([x, y].into_iter().map(|y| y.spun(a.span)));
+                                exec_lambda(λ.clone(), &mut Context::inherits(c), &mut s)
+                                    .map(|()| s.pop().unwrap().inner)
+                            })?
+                            .unwrap()
+                            .spun(span),
+                    );
+                }
+                // vec![1, 2].iter().reduce(|x, y| {});
+                // if λ.argc() !=
             }
             _ => (),
         }
