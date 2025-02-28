@@ -1,10 +1,13 @@
-use std::{fmt::FormattingOptions, ops::Deref};
-
+use crate::parser::util::Spanner;
 use crate::{exec::Argc, lexer::Token};
 use beef::lean::Cow;
 use chumsky::{
     input::{MappedInput, Stream},
     prelude::*,
+};
+use std::{
+    fmt::FormattingOptions,
+    ops::{Deref, Try},
 };
 pub type Span = SimpleSpan<usize>;
 pub type Error<'s> = Rich<'s, Token<'s>, Span>;
@@ -110,6 +113,11 @@ impl<T> Spanned<T> {
             inner: f(self.inner),
             span: self.span,
         }
+    }
+
+    pub fn try_map<U, E>(self, f: impl Fn(T, Span) -> Result<U, E>) -> Result<Spanned<U>, E> {
+        let Self { inner, span } = self;
+        f(inner, span).map(|x| x.spun(span))
     }
 
     pub fn unspan() -> impl Fn(Spanned<T>) -> T + Copy {

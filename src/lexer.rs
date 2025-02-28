@@ -65,7 +65,7 @@ macro_rules! tokens {
 
 tokens! {
     "λ" => Lambda,
-    "⎬" => Array,
+    "⎦" => ArrayN,
     "→" => Place,
 
     "≡" => Eq,
@@ -100,6 +100,7 @@ tokens! {
     "🪪" => Type,
     "📏" => Length,
     "👩‍👩‍👧‍👧" => Group,
+    "📂" => Open,
     "⏪" => Shl,
     "⏩" => Shr,
     "📶" => Sort,

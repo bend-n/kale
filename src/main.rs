@@ -1,4 +1,5 @@
 #![feature(
+    try_trait_v2,
     iter_intersperse,
     formatting_options,
     impl_trait_in_bindings,

@@ -11,11 +11,11 @@ pub enum NumberΛ<'s> {
 
 #[derive(Debug, Clone)]
 pub enum Function<'s> {
-    Both(Λ<'s>),
+    Both(Spanned<Λ<'s>>),
     And(Spanned<Λ<'s>>, Spanned<Λ<'s>>),
     If { then: Λ<'s>, or: Λ<'s> },
     Array(Option<NumberΛ<'s>>),
-    Map(Λ<'s>),
+    Map(Spanned<Λ<'s>>),
     Dup,
     Flip,
     Eq,
@@ -47,11 +47,12 @@ pub enum Function<'s> {
     Mask,
     Group(Λ<'s>),
     Split,
+    Open,
     First,
     Last,
-    Reduce(Λ<'s>),
+    Reduce(Spanned<Λ<'s>>),
     Range,
-    With,
+    With(Spanned<Λ<'s>>),
     Call,
     Sort,
     Zip,
@@ -102,8 +103,8 @@ impl<'s> Function<'s> {
             Token::Zip => Zip,
             Token::Div => Div,
             Token::Mod => Mod,
+            Token::Open => Open,
             Token::Mask => Mask,
-            Token::With => With,
             Token::Split => Split,
             Token::First => First,
             Token::Ne => Ne,
@@ -126,6 +127,7 @@ impl<'s> Function<'s> {
                 fn_param
                     .clone()
                     .then_ignore(just(Token::$name))
+                    .map_with(spanned!())
                     .map($name)
                     .labelled(stringify!($name))
             };
@@ -146,11 +148,12 @@ impl<'s> Function<'s> {
             one![Both],
             one![Reduce],
             one![Map],
+            one![With],
             λ.clone()
                 .then_ignore(just(Token::Group).labelled("group"))
                 .map(Group),
             choice((
-                just(Token::Array).ignore_then(
+                just(Token::ArrayN).ignore_then(
                     fn_param
                         .clone()
                         .map_with(spanned!())
@@ -159,7 +162,7 @@ impl<'s> Function<'s> {
                         .map(Some)
                         .map(Array),
                 ),
-                just(Token::Array).map(|_| Array(None)),
+                t![']'].map(|_| Array(None)),
             ))
             .labelled("array")
             .boxed(),

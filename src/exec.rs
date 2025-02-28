@@ -1,16 +1,14 @@
-use std::{
-    collections::{HashMap, VecDeque},
-    fmt::Display,
-    mem::take,
-    ops::{Add, AddAssign, Sub, SubAssign},
-};
-
-use chumsky::span::SimpleSpan;
-
+use crate::parser::types::Span;
 use crate::parser::{
     fun::{Function, NumberΛ},
     types::*,
     util::Spanner,
+};
+use chumsky::span::{SimpleSpan, Span as _};
+use std::{
+    collections::HashMap,
+    fmt::Display,
+    ops::{Add, Deref, DerefMut},
 };
 #[derive(Clone, Copy, PartialEq, Default)]
 pub struct Argc {
@@ -22,6 +20,7 @@ impl std::fmt::Debug for Argc {
         write!(f, "{}.{}", self.input, self.output)
     }
 }
+type Result<T> = std::result::Result<T, Error>;
 
 impl Argc {
     pub fn takes(input: usize) -> Self {
@@ -36,14 +35,193 @@ impl Argc {
 }
 
 #[derive(Clone)]
+pub enum Array {
+    Array(Vec<Array>),
+    Int(Vec<i128>),
+    Float(Vec<f64>),
+}
+impl Array {
+    fn ty(&self) -> &'static str {
+        match self {
+            Array::Array(_) => "array",
+            Array::Int(_) => "int",
+            Array::Float(_) => "float",
+        }
+    }
+}
+
+macro_rules! each {
+    ($y:expr,$x:expr,$in:ty => $into: ty) => {
+        match $y {
+            Array::Int(x) => annote::<$in, $into>($x)(x),
+            Array::Float(x) => annote::<$in, $into>($x)(x),
+            Array::Array(x) => annote::<$in, $into>($x)(x),
+        }
+    };
+}
+impl Array {
+    fn len(&self) -> usize {
+        each!(self, |x| x.len(), &Vec<_> => usize)
+    }
+    fn iter(&self) -> Box<dyn Iterator<Item = Val<'static>> + '_> {
+        match self {
+            Array::Array(items) => Box::new(items.iter().cloned().map(Val::Array)),
+            Array::Int(items) => Box::new(items.iter().copied().map(Val::Int)),
+            Array::Float(items) => Box::new(items.iter().copied().map(Val::Float)),
+        }
+    }
+}
+
+impl std::fmt::Debug for Array {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Array(x) => x.fmt(f),
+            Self::Int(x) => x.fmt(f),
+            Self::Float(x) => x.fmt(f),
+        }
+    }
+}
+
+impl From<Vec<i128>> for Array {
+    fn from(value: Vec<i128>) -> Self {
+        Array::Int(value)
+    }
+}
+impl From<Vec<f64>> for Array {
+    fn from(value: Vec<f64>) -> Self {
+        Array::Float(value)
+    }
+}
+impl From<Vec<Array>> for Array {
+    fn from(value: Vec<Array>) -> Self {
+        Array::Array(value)
+    }
+}
+
+impl Array {
+    #[track_caller]
+    fn new_unchecked<'s>(value: impl Iterator<Item = Val<'s>>) -> Self {
+        let mut v = value.peekable();
+        let Some(inner) = v.peek() else {
+            return Array::Int(vec![]);
+        };
+        match inner {
+            Val::Array(_) => Array::Array(
+                v.into_iter()
+                    .map(|x| match x {
+                        Val::Array(x) => x,
+                        _ => panic!(),
+                    })
+                    .collect(),
+            ),
+            Val::Float(_) => Array::Float(
+                v.into_iter()
+                    .map(|x| match x {
+                        Val::Float(x) => x,
+                        _ => panic!(),
+                    })
+                    .collect(),
+            ),
+            Val::Int(_) => Array::Int(
+                v.into_iter()
+                    .map(|x| match x {
+                        Val::Int(x) => x,
+                        _ => panic!(),
+                    })
+                    .collect(),
+            ),
+            Val::Lambda(_) => panic!(),
+        }
+    }
+    fn of<'s>(entire: Span, value: impl Iterator<Item = Spanned<Val<'s>>>) -> Result<Self> {
+        let mut v = value.peekable();
+        let Some(Spanned { inner, span }) = v.peek() else {
+            return Ok(Array::Int(vec![]));
+        };
+        Ok(match inner {
+            Val::Array(_) => Array::Array(
+                v.into_iter()
+                    .map(|x| match x.inner {
+                        Val::Array(x) => Ok(x),
+                        _ => Err(Error::ef(entire, "array", x.ty().spun(x.span))),
+                    })
+                    .collect::<Result<_>>()?,
+            ),
+            Val::Float(_) => Array::Float(
+                v.into_iter()
+                    .map(|x| match x.inner {
+                        Val::Float(x) => Ok(x),
+                        _ => Err(Error::ef(entire, "float", x.ty().spun(x.span))),
+                    })
+                    .collect::<Result<_>>()?,
+            ),
+            Val::Int(_) => Array::Int(
+                v.into_iter()
+                    .map(|x| match x.inner {
+                        Val::Int(x) => Ok(x),
+                        _ => Err(Error::ef(entire, "int", x.ty().spun(x.span))),
+                    })
+                    .collect::<Result<_>>()?,
+            ),
+            Val::Lambda(_) => {
+                return Err(Error::ef(entire, "int | array | float", "λ".spun(*span)));
+            }
+        })
+    }
+    fn new(entire: Span, value: Vec<Spanned<Val<'_>>>) -> Result<Self> {
+        let Some(Spanned { inner, span }) = value.first() else {
+            return Ok(Array::Int(vec![]));
+        };
+        Ok(match inner {
+            Val::Array(_) => Array::Array(
+                value
+                    .into_iter()
+                    .map(|x| match x.inner {
+                        Val::Array(x) => Ok(x),
+                        _ => Err(Error::ef(entire, "array", x.ty().spun(x.span))),
+                    })
+                    .collect::<Result<_>>()?,
+            ),
+            Val::Float(_) => Array::Float(
+                value
+                    .into_iter()
+                    .map(|x| match x.inner {
+                        Val::Float(x) => Ok(x),
+                        _ => Err(Error::ef(entire, "float", x.ty().spun(x.span))),
+                    })
+                    .collect::<Result<_>>()?,
+            ),
+            Val::Int(_) => Array::Int(
+                value
+                    .into_iter()
+                    .map(|x| match x.inner {
+                        Val::Int(x) => Ok(x),
+                        _ => Err(Error::ef(entire, "int", x.ty().spun(x.span))),
+                    })
+                    .collect::<Result<_>>()?,
+            ),
+            Val::Lambda(_) => {
+                return Err(Error::ef(entire, "int | array | float", "λ".spun(*span)));
+            }
+        })
+    }
+}
+
+#[derive(Clone)]
 pub enum Val<'s> {
-    Array(Vec<Val<'s>>),
+    Array(Array),
     Lambda(Λ<'s>),
     Int(i128),
     Float(f64),
 }
 
-impl Val<'_> {
+impl<'s> Val<'s> {
+    fn assert_array(self: Spanned<Val<'s>>, span: Span) -> Result<Spanned<Array>> {
+        match self.inner {
+            Self::Array(x) => Ok(x.spun(self.span)),
+            x => Err(Error::ef(span, "array", x.ty().spun(self.span))),
+        }
+    }
     fn ty(&self) -> &'static str {
         match self {
             Self::Array(_) => "array",
@@ -78,46 +256,40 @@ impl From<bool> for Val<'_> {
     }
 }
 
-impl<'a> From<Vec<Val<'a>>> for Val<'a> {
-    fn from(value: Vec<Val<'a>>) -> Self {
-        Self::Array(value)
-    }
-}
-
-impl ConcreteVal {
-    fn val(self) -> Val<'static> {
-        match self {
-            ConcreteVal::Array(x) => {
-                Val::Array(x.into_iter().map(ConcreteVal::val).collect::<Vec<_>>())
-            }
-            ConcreteVal::Int(x) => Val::Int(x),
-            ConcreteVal::Float(x) => Val::Float(x),
-        }
-    }
-}
+// impl ConcreteVal {
+//     fn val(self) -> Val<'static> {
+//         match self {
+//             ConcreteVal::Array(x) => {
+//                 Val::Array(x.into_iter().map(ConcreteVal::val).collect::<Vec<_>>())
+//             }
+//             ConcreteVal::Int(x) => Val::Int(x),
+//             ConcreteVal::Float(x) => Val::Float(x),
+//         }
+//     }
+// }
 
 impl<'s> Val<'s> {
-    pub fn concrete(self: Spanned<Self>, user: SimpleSpan) -> Result<Spanned<ConcreteVal>, Error> {
-        let (x, span) = self.raw();
-        Ok(match x {
-            Val::Array(x) => ConcreteVal::Array(
-                x.into_iter()
-                    .map(|x| x.spun(span).concrete(user).map(|x| x.inner))
-                    .collect::<Result<Vec<_>, _>>()?,
-            ),
-            Val::Float(x) => ConcreteVal::Float(x),
-            Val::Int(x) => ConcreteVal::Int(x),
-            Val::Lambda(..) => {
-                return Err(Error {
-                    name: "value not concrete (λ)".into(),
-                    message: "concrete value required here".to_string().spun(user),
-                    labels: vec!["created here".to_string().spun(span)],
-                    notes: vec![],
-                });
-            }
-        }
-        .spun(span))
-    }
+    // pub fn concrete(self: Spanned<Self>, user: SimpleSpan) -> Result<Spanned<ConcreteVal>> {
+    //     let (x, span) = self.raw();
+    //     Ok(match x {
+    //         Val::Array(x) => ConcreteVal::Array(
+    //             x.into_iter()
+    //                 .map(|x| x.spun(span).concrete(user).map(|x| x.inner))
+    //                 .collect::<Result<Vec<_>, _>>()?,
+    //         ),
+    //         Val::Float(x) => ConcreteVal::Float(x),
+    //         Val::Int(x) => ConcreteVal::Int(x),
+    //         Val::Lambda(..) => {
+    //             return Err(Error {
+    //                 name: "value not concrete (λ)".into(),
+    //                 message: "concrete value required here".to_string().spun(user),
+    //                 labels: vec!["created here".to_string().spun(span)],
+    //                 notes: vec![],
+    //             });
+    //         }
+    //     }
+    //     .spun(span))
+    // }
 }
 
 impl std::fmt::Debug for Val<'_> {
@@ -171,10 +343,16 @@ impl<'s> Stack<'s> {
     fn new() -> Self {
         Self(Vec::from([Vec::with_capacity(200)]))
     }
+    fn take(&mut self, take: usize) -> impl Iterator<Item = Spanned<Val<'s>>> {
+        let n = self.len();
+        self.drain(n - take..)
+    }
+    pub fn of(x: impl Iterator<Item = Spanned<Val<'s>>>) -> Self {
+        Self(vec![x.collect()])
+    }
     pub fn push(&mut self, x: Spanned<Val<'s>>) {
         self.curr().push(x);
     }
-    #[track_caller]
     pub fn pop(&mut self) -> Option<Spanned<Val<'s>>> {
         self.curr().pop()
     }
@@ -186,6 +364,19 @@ impl<'s> Stack<'s> {
     }
 }
 
+impl<'s> Deref for Stack<'s> {
+    type Target = Vec<Spanned<Val<'s>>>;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.last().unwrap()
+    }
+}
+impl<'s> DerefMut for Stack<'s> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.curr()
+    }
+}
+
 #[derive(Debug)]
 pub struct Error {
     pub name: String,
@@ -194,8 +385,19 @@ pub struct Error {
     pub notes: Vec<String>,
 }
 
+impl Default for Error {
+    fn default() -> Self {
+        Self {
+            name: Default::default(),
+            message: String::default().spun(Span::new((), 0..0)),
+            labels: Default::default(),
+            notes: Default::default(),
+        }
+    }
+}
+
 impl Error {
-    pub fn stack_empty(span: SimpleSpan) -> Self {
+    pub fn stack_empty(span: Span) -> Self {
         Error {
             name: "stack empty".into(),
             message: "empty stack".to_string().spun(span),
@@ -204,7 +406,7 @@ impl Error {
         }
     }
 
-    pub fn ef(span: SimpleSpan, expected: impl Display, found: Spanned<impl Display>) -> Self {
+    pub fn ef(span: Span, expected: impl Display, found: Spanned<impl Display>) -> Self {
         Error {
             name: "type mismatch".to_string(),
             labels: vec![format!("found {found}, not an {expected}").spun(found.span())],
@@ -228,7 +430,7 @@ impl Annotate for Error {
     }
 }
 
-impl<T> Annotate for Result<T, Error> {
+impl<T> Annotate for Result<T> {
     fn label(self, message: Spanned<impl Into<String>>) -> Self {
         self.map_err(|x| x.label(message))
     }
@@ -243,6 +445,7 @@ fn x() {
         crate::parser::parse_s("5 + 1 2 ×", crate::parser::top()).argc() == Argc::takes(1).into(2)
     );
     assert!(crate::parser::parse_s("¯", crate::parser::top()).argc() == Argc::takes(1).into(1));
+    assert!(crate::parser::parse_s("0≥", crate::parser::top()).argc() == Argc::takes(1).into(1));
 }
 
 impl Add<Argc> for Argc {
@@ -263,8 +466,20 @@ impl Add<Argc> for Argc {
 fn size_fn<'s>(f: &Function<'s>) -> Argc {
     use Function::*;
     match f {
-        Add | Mul | Div | Xor | Mod | Pow | Eq | Ne | BitAnd | Or => Argc::takes(2).into(1),
-        Neg | Sqrt | Not => Argc::takes(1).into(1),
+        Index | Add | Mul | Div | Xor | Mod | Pow | Eq | Ne | BitAnd | Or | Ge | Le | Lt | Gt => {
+            Argc::takes(2).into(1)
+        }
+        With(x) => Argc::takes(1).into(x.argc().output),
+        Open | Neg | Sqrt | Not => Argc::takes(1).into(1),
+        Flip => Argc::takes(2).into(2),
+        Dup => Argc::takes(1).into(2),
+        Zap => Argc::takes(1).into(0),
+        Mask => Argc::takes(2).into(1),
+        // With => Argc::takes(1).into(),
+        And(a, b) => {
+            Argc::takes(a.argc().input.max(b.argc().input)).into(a.argc().output + b.argc().output)
+        }
+        Both(x) => Argc::takes(x.argc().input * 2).into(x.argc().output * 2),
         _ => Argc {
             input: 0,
             output: 0,
@@ -278,7 +493,12 @@ fn size_expr<'s>(x: &Expr<'s>) -> Argc {
         Expr::Value(_) => Argc::produces(1),
     }
 }
-
+fn normalize_index(x: i128, size: usize) -> usize {
+    match x {
+        ..0 => (size as i128 + x) as usize,
+        _ => x as usize,
+    }
+}
 impl<'s> Λ<'s> {
     pub fn sized(x: &[Spanned<Expr<'s>>]) -> Argc {
         // 5             + (borrows) 1  2        *
@@ -292,7 +512,7 @@ fn exec_lambda<'s>(
     x: Spanned<Λ<'s>>,
     c: &mut Context<'s, '_>,
     stack: &mut Stack<'s>,
-) -> Result<(), Error> {
+) -> Result<()> {
     let (x, upper) = x.raw();
     for elem in x.0 {
         let (elem, span) = elem.raw();
@@ -327,7 +547,7 @@ fn exec_lambda<'s>(
                         Value::Int(x) => Val::Int(x as i128),
                         Value::Float(x) => Val::Float(x),
                         Value::String(x) => {
-                            Val::Array(x.bytes().map(|x| Val::Int(x as i128)).collect())
+                            Val::Array(Array::Int(x.bytes().map(|x| x as i128).collect()))
                         }
                         Value::Lambda(x) => Val::Lambda(x),
                     }
@@ -341,57 +561,85 @@ fn exec_lambda<'s>(
 }
 
 fn pervasive_binop<'a>(
-    a: &Val<'a>,
-    b: &Val<'a>,
-    map: impl Fn(&Val<'a>, &Val<'a>) -> Result<Val<'a>, Error> + Copy,
-    mismatch: impl FnOnce() -> Error + Clone,
-) -> Result<Val<'a>, Error> {
-    use Val::*;
-    match (a, b) {
-        (Array(x), Array(y)) => {
+    span: SimpleSpan,
+    a: &Spanned<Val<'a>>,
+    b: &Spanned<Val<'a>>,
+    map: impl Fn(&Val<'a>, &Val<'a>) -> Result<Val<'a>> + Copy,
+) -> Result<Val<'a>> {
+    match (&a.inner, &b.inner) {
+        (Val::Array(x), Val::Array(y)) => {
             if x.len() != y.len() {
-                return Err(mismatch());
+                return Err(Error {
+                    name: "argument length mismatch".to_string(),
+                    message: "for this function".to_string().spun(span),
+                    labels: vec![],
+                    notes: vec![],
+                }
+                .label("first argument".spun(a.span))
+                .label("second argument".spun(b.span)));
+            }
+            if x.ty() != y.ty() {
+                return Err(Error {
+                    name: "array type mismatch".to_string(),
+                    message: "for this function".to_string().spun(span),
+                    ..Default::default()
+                })
+                .label(format!("first argument of type {}", x.ty()).spun(a.span))
+                .label(format!("second argument of type {}", y.ty()).spun(b.span));
             }
 
-            x.into_iter()
-                .zip(y)
-                .map(|(x, y)| pervasive_binop(x, y, map, mismatch.clone()))
-                .collect::<Result<Vec<_>, _>>()
-                .map(Array)
+            x.iter()
+                .zip(y.iter())
+                .map(|(x, y)| {
+                    pervasive_binop(span, &x.spun(a.span), &y.spun(b.span), map)
+                        .map(|x| x.spun(span))
+                })
+                .collect::<Result<_>>()
+                .and_then(|x| Array::new(span, x))
+                .map(Val::Array)
         }
-        (Array(x), y) | (y, Array(x)) => x
-            .into_iter()
-            .map(|x| pervasive_binop(&x, &y, map, mismatch.clone()))
-            .collect::<Result<Vec<_>, _>>()
-            .map(Array),
+        (Val::Array(x), y) | (y, Val::Array(x)) => x
+            .iter()
+            .map(|x| {
+                pervasive_binop(span, &x.spun(a.span), &y.clone().spun(b.span), map)
+                    .map(|x| x.spun(span))
+            })
+            .collect::<Result<_>>()
+            .and_then(|x| Array::new(span, x))
+            .map(Val::Array),
         (x, y) => map(x, y),
     }
 }
 
 fn pervasive_unop<'s>(
-    x: Val<'s>,
-    f: impl Fn(Val<'s>) -> Result<Val<'s>, Error> + Copy,
-) -> Result<Val<'s>, Error> {
+    Spanned { inner: x, span }: Spanned<Val<'s>>,
+    f: impl Fn(Val<'s>) -> Result<Val<'s>> + Copy,
+) -> Result<Val<'s>> {
     match x {
         Val::Array(x) => x
-            .into_iter()
-            .map(|x| match x {
-                x @ Val::Array(_) => pervasive_unop(x, f),
-                x => f(x),
+            .iter()
+            .map(|x| {
+                match x {
+                    x @ Val::Array(_) => pervasive_unop(x.spun(span), f),
+                    x => f(x),
+                }
+                .map(|x| x.spun(span))
             })
-            .collect::<Result<_, _>>()
+            .collect::<Result<_>>()
+            .and_then(|x| Array::new(span, x))
             .map(Val::Array),
         x => f(x),
     }
 }
 
 impl<'s> Function<'s> {
-    pub fn execute(
-        self: Spanned<Self>,
-        c: &Context<'s, '_>,
-        stack: &mut Stack<'s>,
-    ) -> Result<(), Error> {
+    pub fn execute(self: Spanned<Self>, c: &Context<'s, '_>, stack: &mut Stack<'s>) -> Result<()> {
         let (x, span) = self.raw();
+        macro_rules! pop {
+            () => {
+                stack.pop().ok_or(Error::stack_empty(span))?
+            };
+        }
         macro_rules! concrete_ab {
             ($x:tt) => {
                 concrete_ab!(|a, b| a $x b)
@@ -406,7 +654,8 @@ impl<'s> Function<'s> {
                         "got second argument from here".spun(b_.span()),
                     ))?;
                 stack.push(pervasive_binop(
-                    &*a_, &*b_, |a, b| {
+                    span,
+                    &a_, &b_, |a, b| {
                         match (a, b) {
                             (Val::Float(x), Val::Int(y)) | (Val::Int(y), Val::Float(x)) =>
                                 Ok(Val::from(($a)(x, &(*y as f64)))),
@@ -419,12 +668,6 @@ impl<'s> Function<'s> {
                             _ => unreachable!(),
                         }
                     },
-                    || Error{
-                        name: "argument length mismatch".to_string(),
-                        message: "for this function".to_string().spun(span),
-                        labels: vec![],
-                        notes:vec![],
-                    }.label("first argument".spun(a_.span())).label("second argument".spun(b_.span())),
                 )?.spun(span));
             }};
 
@@ -432,39 +675,25 @@ impl<'s> Function<'s> {
 
         macro_rules! number_ab {
             ($a:expr) => {{
-                let a_ = stack.pop().ok_or(Error::stack_empty(span))?;
+                let a_ = pop!();
                 let b_ = stack.pop().ok_or(
                     Error::stack_empty(span).label("got first argument from here".spun(a_.span())),
                 )?;
                 stack.push(
-                    pervasive_binop(
-                        &*a_,
-                        &*b_,
-                        |a, b| match (a, b) {
-                            (Val::Float(_), Val::Float(_)) => {
-                                Err(Error::ef(span, "int", "float".spun(a_.span()))
-                                    .label("float (not int)".spun(b_.span())))
-                            }
-                            (Val::Int(x), Val::Int(y)) => Ok(Val::from(($a)(x, y))),
-                            (x, Val::Int(_)) => {
-                                Err(Error::ef(span, "expected int", x.ty().spun(a_.span())))
-                            }
-                            (Val::Int(_), x) => {
-                                Err(Error::ef(span, "expected int", x.ty().spun(b_.span())))
-                            }
-                            _ => unreachable!(),
-                        },
-                        || {
-                            Error {
-                                name: "argument length mismatch".to_string(),
-                                message: "for this function".to_string().spun(span),
-                                labels: vec![],
-                                notes: vec![],
-                            }
-                            .label("first argument".spun(a_.span()))
-                            .label("second argument".spun(b_.span()))
-                        },
-                    )?
+                    pervasive_binop(span, &a_, &b_, |a, b| match (a, b) {
+                        (Val::Float(_), Val::Float(_)) => {
+                            Err(Error::ef(span, "int", "float".spun(a_.span()))
+                                .label("float (not int)".spun(b_.span())))
+                        }
+                        (Val::Int(x), Val::Int(y)) => Ok(Val::from(($a)(x, y))),
+                        (x, Val::Int(_)) => {
+                            Err(Error::ef(span, "expected int", x.ty().spun(a_.span())))
+                        }
+                        (Val::Int(_), x) => {
+                            Err(Error::ef(span, "expected int", x.ty().spun(b_.span())))
+                        }
+                        _ => unreachable!(),
+                    })?
                     .spun(span),
                 )
             }};
@@ -485,7 +714,8 @@ impl<'s> Function<'s> {
                 unary!(|x| $x x)
             };
             ($x:expr) => {{
-                let (x, xspan) = stack.pop().ok_or(Error::stack_empty(span))?.raw();
+                let x = pop!();
+                let xspan = x.span();
                 stack.push(
                     pervasive_unop(x, |x| {
                         Ok(match x {
@@ -531,6 +761,7 @@ impl<'s> Function<'s> {
                 f64::sqrt(*self)
             }
         }
+
         match x {
             Self::Add => concrete_ab!(+),
             Self::Sub => concrete_ab!(-),
@@ -553,7 +784,7 @@ impl<'s> Function<'s> {
                     NumberΛ::Number(x) => x as usize,
                     NumberΛ::Λ(x) => {
                         exec_lambda(x, &mut Context::inherits(c), stack)?;
-                        let (y, yspan) = stack.pop().ok_or(Error::stack_empty(span))?.raw();
+                        let (y, yspan) = pop!().raw();
                         match y {
                             Val::Int(x) => x as usize,
                             z => {
@@ -562,44 +793,132 @@ impl<'s> Function<'s> {
                         }
                     }
                 };
-                let r = stack.curr().len() - r;
-                let result = stack.curr().split_off(r);
-                stack.push(Val::Array(result.into_iter().map(|x| x.inner).collect()).spun(span))
+                let r = stack.len() - r;
+                let result = stack.split_off(r);
+                stack.push(Val::Array(Array::new(span, result)?).spun(span))
             }
             Self::Array(None) => {
-                let drained = stack.curr().drain(..).map(|x| x.inner).collect();
+                let drained = Array::of(span, stack.drain(..))?;
                 stack.push(Val::Array(drained).spun(span));
             }
             Self::Dup => {
-                let x = stack.pop().ok_or(Error::stack_empty(span))?.clone();
+                let x = pop!().clone();
+                stack.push(x.clone());
                 stack.push(x);
             }
+            Self::Zap => drop(stack.pop()),
             Self::Flip => {
-                let x = stack.pop().ok_or(Error::stack_empty(span))?;
-                let y = stack.pop().ok_or(Error::stack_empty(span))?;
+                let x = pop!();
+                let y = pop!();
                 stack.push(y);
                 stack.push(x);
             }
-            // basically ⎬^⎬2 (x)🗺
             Self::And(x, y) => {
                 let xargs = x.argc();
                 let yargs = y.argc();
                 let requires = yargs.input.max(xargs.input);
 
-                let n = stack.curr().len();
-                let s = Stack(vec![stack.curr().drain(n - requires..).collect::<Vec<_>>()]);
+                let s = Stack::of(stack.take(requires));
                 let mut a = s.clone();
                 exec_lambda(x, &mut Context::inherits(c), &mut a)?;
-                let n = a.curr().len();
-                let x = a.curr().drain(n - xargs.output..);
+                let x = a.take(xargs.output);
 
                 let mut a = s.clone();
                 exec_lambda(y, &mut Context::inherits(c), &mut a)?;
-                let n = a.curr().len();
-                let y = a.curr().drain(n - yargs.output..);
+                let y = a.take(yargs.output);
 
-                stack.curr().extend(x);
-                stack.curr().extend(y);
+                stack.extend(x);
+                stack.extend(y);
+            }
+            Self::Both(x) => {
+                let xargs = x.argc();
+                let mut a = Stack::of(stack.take(xargs.input));
+                exec_lambda(x.clone(), &mut Context::inherits(c), &mut a)?;
+
+                let mut b = Stack::of(stack.take(xargs.input));
+                exec_lambda(x, &mut Context::inherits(c), &mut b)?;
+
+                stack.extend(b.take(xargs.output));
+                stack.extend(a.take(xargs.output));
+            }
+            Self::Mask => {
+                let mask = pop!().assert_array(span)?;
+                let a = pop!().assert_array(span)?;
+                let Array::Int(m) = mask.inner else {
+                    return Err(Error::ef(span, "array[bit]", mask.ty().spun(mask.span)));
+                };
+                if a.len() != m.len() {
+                    return Err(Error {
+                        name: "argument length mismatch".to_string(),
+                        message: "for this function".to_string().spun(span),
+                        labels: vec![],
+                        notes: vec![],
+                    }
+                    .label("first argument".spun(a.span))
+                    .label("second argument".spun(mask.span)));
+                }
+                stack.push(
+                    Val::Array(Array::new_unchecked(
+                        a.iter().zip(m).filter(|(_, x)| *x == 1).map(|(x, _)| x),
+                    ))
+                    .spun(span),
+                );
+            }
+            Self::With(λ) => {
+                let array = pop!().assert_array(span)?;
+                let mut a = Stack::of(array.iter().map(|x| x.spun(array.span)));
+                exec_lambda(λ, &mut Context::inherits(c), &mut a)?;
+                stack.extend(a.drain(..));
+            }
+            Self::Index => {
+                let index = pop!().assert_array(span)?.try_map(|x, s| match x {
+                    Array::Int(x) => Ok(x),
+                    x => Err(Error::ef(span, "array[int]", x.ty().spun(s))),
+                })?;
+                let array = pop!().assert_array(span)?;
+                let out = each!(
+                    array.inner,
+                    |x| index
+                        .iter()
+                        .map(|y| x.get(normalize_index(*y, x.len())).cloned().ok_or_else(|| {
+                            Error {
+                                name: format!(
+                                    "index ({y}) out of bounds for arra of length {}",
+                                    x.len()
+                                ),
+                                message: "here".to_string().spun(span),
+                                ..Default::default()
+                            }
+                            .label("index from".spun(index.span))
+                            .label("array from".spun(array.span))
+                        }))
+                        .collect::<Result<Vec<_>>>().map(Array::from).map(Val::Array),
+                    Vec<_> => Result<Val>
+                )?;
+                stack.push(out.spun(span));
+            }
+            Self::Open => {
+                let x = pop!().assert_array(span)?.try_map(|x, s| match x {
+                    Array::Int(x) => String::from_utf8(x.into_iter().map(|x| x as u8).collect())
+                        .map_err(|e| {
+                            Error::ef(span, "valid utf8", "invalid utf8".spun(s))
+                                .note(e.utf8_error().to_string())
+                        }),
+                    x => Err(Error::ef(span, "array", x.ty().spun(s))),
+                })?;
+                stack.push(
+                    Val::Array(Array::Int(
+                        std::fs::read(&*x)
+                            .map_err(|e| {
+                                Error::ef(span, "valid file", "invalid file".spun(x.span))
+                                    .note(e.to_string())
+                            })?
+                            .into_iter()
+                            .map(|x| x as i128)
+                            .collect(),
+                    ))
+                    .spun(x.span),
+                );
             }
             _ => (),
         }
@@ -608,5 +927,9 @@ impl<'s> Function<'s> {
 }
 
 fn annotate<'a, T>(f: impl FnOnce(&T) -> T) -> impl FnOnce(&T) -> T {
+    f
+}
+
+fn annote<'a, T, U>(f: impl FnOnce(T) -> U) -> impl FnOnce(T) -> U {
     f
 }
