@@ -1,29 +1,38 @@
-use crate::exec::Error as ExecutionError;
-use crate::parser::types::Error;
 use chumsky::error::RichReason;
-use codespan_reporting::diagnostic::LabelStyle::{self, Primary, Secondary};
+use codespan_reporting::diagnostic::LabelStyle::{
+    self, Primary, Secondary,
+};
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::files::SimpleFiles;
-use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
-
 use codespan_reporting::term::Chars;
+use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use comat::cformat as cmt;
 
-pub fn display_execution<T>(x: Result<T, ExecutionError>, code: &str) -> T {
+use crate::exec::Error as ExecutionError;
+use crate::parser::types::Error;
+
+pub fn display_execution<T>(
+    x: Result<T, ExecutionError>,
+    code: &str,
+) -> T {
     let e = match x {
         Ok(x) => return x,
         Err(e) => e,
     };
     let mut files = SimpleFiles::new();
     files.add("x.kale", code);
-    let mut d = Diagnostic::<usize>::new(codespan_reporting::diagnostic::Severity::Error)
-        .with_message(e.name)
-        .with_label(
-            Label::new(LabelStyle::Primary, 0, e.message.span()).with_message(e.message.raw().0),
-        );
+    let mut d = Diagnostic::<usize>::new(
+        codespan_reporting::diagnostic::Severity::Error,
+    )
+    .with_message(e.name)
+    .with_label(
+        Label::new(LabelStyle::Primary, 0, e.message.span())
+            .with_message(e.message.raw().0),
+    );
     for label in e.labels {
         d = d.with_label(
-            Label::new(LabelStyle::Secondary, 0, label.span()).with_message(label.raw().0),
+            Label::new(LabelStyle::Secondary, 0, label.span())
+                .with_message(label.raw().0),
         );
     }
 
@@ -32,11 +41,20 @@ pub fn display_execution<T>(x: Result<T, ExecutionError>, code: &str) -> T {
     let writer = StandardStream::stderr(ColorChoice::Always);
     let mut config = codespan_reporting::term::Config::default();
     config.chars = Chars::box_drawing();
-    codespan_reporting::term::emit(&mut writer.lock(), &config, &files, &d).unwrap();
+    codespan_reporting::term::emit(
+        &mut writer.lock(),
+        &config,
+        &files,
+        &d,
+    )
+    .unwrap();
     std::process::exit(2);
 }
 
-pub fn display<T>(result: Result<T, Vec<Error>>, code: &str) -> Result<T, ()> {
+pub fn display<T>(
+    result: Result<T, Vec<Error>>,
+    code: &str,
+) -> Result<T, ()> {
     let e = match result {
         Ok(x) => return Ok(x),
         Err(e) => e,
@@ -46,7 +64,9 @@ pub fn display<T>(result: Result<T, Vec<Error>>, code: &str) -> Result<T, ()> {
     files.add("x.kale", code);
 
     for e in e.into_iter().map(|e| e.map_token(|c| c.to_string())) {
-        let mut d = Diagnostic::<usize>::new(codespan_reporting::diagnostic::Severity::Error);
+        let mut d = Diagnostic::<usize>::new(
+            codespan_reporting::diagnostic::Severity::Error,
+        );
         // let mut o = lerr::Error::new(code);
         d = d.with_label(Label {
             style: Primary,
@@ -92,7 +112,13 @@ pub fn display<T>(result: Result<T, Vec<Error>>, code: &str) -> Result<T, ()> {
         let writer = StandardStream::stderr(ColorChoice::Always);
         let mut config = codespan_reporting::term::Config::default();
         config.chars = Chars::box_drawing();
-        codespan_reporting::term::emit(&mut writer.lock(), &config, &files, &d).unwrap();
+        codespan_reporting::term::emit(
+            &mut writer.lock(),
+            &config,
+            &files,
+            &d,
+        )
+        .unwrap();
     }
     Err(())
 }

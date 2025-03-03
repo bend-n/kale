@@ -1,9 +1,11 @@
+use std::sync::LazyLock;
+
 use beef::lean::Cow;
 use chumsky::span::{SimpleSpan, Span};
 use logos::{Lexer as RealLexer, Logos, SpannedIter};
 use regex::Regex;
-use std::sync::LazyLock;
-static EMOJI: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\p{Emoji}&&[^0-9]]").unwrap());
+static EMOJI: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[\p{Emoji}&&[^0-9]]").unwrap());
 macro_rules! tokens {
     ($($z:literal $( | $y:literal)? => $v:ident,)+) => {
         #[derive(Logos, Debug, PartialEq, Clone)]
@@ -94,7 +96,7 @@ tokens! {
     "🔀" => Flip,
     "⤵️" => Zap,
 
-    "⬇" => With,
+    "⬇️" => With,
     "⬆" => Merge,
     "⏫" => Range,
     "🪪" => Type,
@@ -103,19 +105,25 @@ tokens! {
     "📂" => Open,
     "⏪" => Shl,
     "⏩" => Shr,
+    "❎" => Del,
     "📶" => Sort,
     "🔓" => Mask,
     "🔒" => Index,
+    "#️⃣🗺" => HashMap,
+    "≣#️⃣" => Get,
+    "∅" => Set,
+    "💽" => Append,
     "🚧" => Split,
-    "⬅" => First,
+    "⬅️" => First,
     "➡" => Last,
     "↘️" => Reduce,
+    "⏭️" => Fold,
     "🗺" => Map,
     "🐋" => If,
     "🐬" => EagerIf,
     "🇳🇿" => Zip,
     "🧐" => Debug,
-    "." => Call,
+    "." => Identity,
 
 }
 
@@ -125,7 +133,9 @@ pub fn lex(s: &str) -> Lexer {
     }
 }
 
-fn chr<'src, const CHR: char>(_: &mut RealLexer<'src, Token<'src>>) -> Result<char, ()> {
+fn chr<'src, const CHR: char>(
+    _: &mut RealLexer<'src, Token<'src>>,
+) -> Result<char, ()> {
     Ok(CHR)
 }
 pub struct Lexer<'s> {

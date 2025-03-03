@@ -1,14 +1,16 @@
-use crate::parser::util::Spanner;
-use crate::{exec::Argc, lexer::Token};
+use std::collections::HashSet;
+use std::fmt::FormattingOptions;
+use std::hash::Hash;
+use std::ops::{Deref, DerefMut};
+
 use beef::lean::Cow;
-use chumsky::{
-    input::{MappedInput, Stream},
-    prelude::*,
-};
-use std::{
-    fmt::FormattingOptions,
-    ops::{Deref, Try},
-};
+use chumsky::input::{MappedInput, Stream};
+use chumsky::prelude::*;
+use umath::FF64;
+
+use crate::exec::Argc;
+use crate::lexer::Token;
+use crate::parser::util::Spanner;
 pub type Span = SimpleSpan<usize>;
 pub type Error<'s> = Rich<'s, Token<'s>, Span>;
 pub type Input<'s> = MappedInput<
@@ -20,6 +22,22 @@ pub type Input<'s> = MappedInput<
 
 #[derive(Clone, Default)]
 pub struct Λ<'s>(pub Vec<Spanned<Expr<'s>>>, Argc);
+impl Hash for Λ<'_> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.1.hash(state);
+    }
+}
+impl PartialOrd for Λ<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for Λ<'_> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.1.cmp(&other.1)
+    }
+}
+impl Eq for Λ<'_> {}
 impl PartialEq for Λ<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.1 == other.1
@@ -44,10 +62,12 @@ impl std::fmt::Debug for Λ<'_> {
                     f.write_fmt(format_args!("λ({x:?})"))
                 } else {
                     write!(f, "λ")?;
-                    f.with_options(*FormattingOptions::new().alternate(true))
-                        .debug_list()
-                        .entries(&self.0)
-                        .finish()
+                    f.with_options(
+                        *FormattingOptions::new().alternate(true),
+                    )
+                    .debug_list()
+                    .entries(&self.0)
+                    .finish()
                 }
             }
         }
@@ -67,7 +87,9 @@ impl std::fmt::Debug for Value<'_> {
         match self {
             Self::Float(x) => write!(f, "{x}"),
             Self::Int(x) => write!(f, "{x}"),
-            Self::String(x) => write!(f, "\"{x}\""),
+            Self::String(x) => {
+                write!(f, "\"{x}\"")
+            }
             Self::Lambda(s) => s.fmt(f),
         }
     }
@@ -112,6 +134,12 @@ impl<T> Deref for Spanned<T> {
     }
 }
 
+impl<T> DerefMut for Spanned<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
 impl<T> Spanned<T> {
     pub fn map<U>(self, f: impl Fn(T) -> U) -> Spanned<U> {
         Spanned {
@@ -120,7 +148,10 @@ impl<T> Spanned<T> {
         }
     }
 
-    pub fn try_map<U, E>(self, f: impl Fn(T, Span) -> Result<U, E>) -> Result<Spanned<U>, E> {
+    pub fn try_map<U, E>(
+        self,
+        f: impl Fn(T, Span) -> Result<U, E>,
+    ) -> Result<Spanned<U>, E> {
         let Self { inner, span } = self;
         f(inner, span).map(|x| x.spun(span))
     }
@@ -178,7 +209,11 @@ impl std::fmt::Debug for Type<'_> {
                 f,
                 "{}",
                 std::iter::once("(".to_string())
-                    .chain(x.iter().map(|x| format!("{x:?}")).intersperse(", ".into()),)
+                    .chain(
+                        x.iter()
+                            .map(|x| format!("{x:?}"))
+                            .intersperse(", ".into()),
+                    )
                     .chain([")".to_string()])
                     .reduce(|acc, x| acc + &x)
                     .unwrap()

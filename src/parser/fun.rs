@@ -1,28 +1,29 @@
+use chumsky::Parser;
+use chumsky::prelude::*;
+
 use super::types::*;
 use super::util::*;
 use crate::lexer::Token;
-use chumsky::{Parser, prelude::*};
-
-#[derive(Debug, Clone)]
-pub enum NumberΛ<'s> {
-    Number(u64),
-    Λ(Spanned<Λ<'s>>),
-}
 
 #[derive(Debug, Clone)]
 pub enum Function<'s> {
-    Both(Spanned<Λ<'s>>),
-    And(Spanned<Λ<'s>>, Spanned<Λ<'s>>),
+    Both(Spanned<Λ<'s>>, usize),
+    And(Vec<Spanned<Λ<'s>>>),
+    Take(u64),
     If { then: Λ<'s>, or: Λ<'s> },
-    Array(Option<NumberΛ<'s>>),
+    Array(Option<u64>),
+    Append,
     Map(Spanned<Λ<'s>>),
     Dup,
     Flip,
     Eq,
     Reverse,
-    Zap,
+    Zap(Option<u64>),
+    Del,
+    Debug,
     Add,
     Sub,
+    IndexHashMap,
     Not,
     Mul,
     Pow,
@@ -42,6 +43,7 @@ pub enum Function<'s> {
     Or,
     Xor,
     Div,
+    Fold(Spanned<Λ<'s>>),
     Mod,
     Index,
     Mask,
@@ -53,15 +55,21 @@ pub enum Function<'s> {
     Reduce(Spanned<Λ<'s>>),
     Range,
     With(Spanned<Λ<'s>>),
+    HashMap,
     Call,
     Sort,
     Zip,
+    Identity,
+    EmptySet,
+    Setify,
     Ident(&'s str),
     Define(&'s str),
 }
 
 impl<'s> Λ<'s> {
-    pub fn parse(exp: parser![Spanned<Expr<'s>>]) -> parser![Spanned<Self>] {
+    pub fn parse(
+        exp: parser![Spanned<Expr<'s>>],
+    ) -> parser![Spanned<Self>] {
         exp.repeated()
             .collect()
             .delimited_by(t!['('], t![')'])
@@ -75,10 +83,17 @@ impl<'s> Function<'s> {
         use Function::*;
         let basic = select! {
             Token::Dup => Dup,
+            Token::Debug => Debug,
             Token::Flip => Flip,
             // Token::Reverse => Reverse,
-            Token::Zap => Zap,
+            Token::Zap => Zap(None),
             Token::Add => Add,
+            Token::ClosingBracket('}') => Setify,
+            Token::Set => EmptySet,
+            Token::Identity => Identity,
+            Token::Del => Del,
+            Token::HashMap => HashMap,
+            Token::Get => IndexHashMap,
             Token::Sub => Sub,
             Token::Mul => Mul,
             Token::Pow => Pow,
@@ -90,6 +105,7 @@ impl<'s> Function<'s> {
             Token::Shl => Shl,
             Token::Group => Group,
             Token::Shr => Shr,
+            Token::Append => Append,
             Token::Neg => Neg,
             Token::Eq => Eq,
             Token::Gt => Gt,
@@ -117,7 +133,9 @@ impl<'s> Function<'s> {
 
         let fn_param = choice((
             basic
-                .map_with(|x, e| Λ::of(vec![Expr::Function(x).spun(e.span())]))
+                .map_with(|x, e| {
+                    Λ::of(vec![Expr::Function(x).spun(e.span())])
+                })
                 .labelled("function"),
             λ.clone(),
         ))
@@ -145,21 +163,43 @@ impl<'s> Function<'s> {
             };
         }
         choice((
-            two![And],
-            one![Both],
-            one![Reduce],
-            one![Map],
-            one![With],
-            choice((
-                just(Token::ArrayN).ignore_then(
+            λ.clone()
+                .map_with(spanned!())
+                .then(
                     fn_param
                         .clone()
                         .map_with(spanned!())
-                        .map(NumberΛ::Λ)
-                        .or(select! { Token::Int(x) => NumberΛ::Number(x) })
-                        .map(Some)
-                        .map(Array),
-                ),
+                        .repeated()
+                        .at_least(1)
+                        .collect::<Vec<_>>(),
+                )
+                .then_ignore(just(Token::And))
+                .map(|(a, mut b)| {
+                    b.insert(0, a);
+                    And(b)
+                })
+                .boxed(),
+            fn_param
+                .clone()
+                .map_with(spanned!())
+                .then(
+                    just(Token::Both)
+                        .repeated()
+                        .at_least(1)
+                        .count()
+                        .map(|x| x + 1),
+                )
+                .map(|(a, b)| Both(a, b))
+                .labelled("both"),
+            one![Reduce],
+            one![Fold],
+            one![Map],
+            one![With],
+            just(Token::Zap).ignore_then(t![int]).map(Some).map(Zap),
+            t!['['].ignore_then(t![int]).map(Take),
+            choice((
+                just(Token::ArrayN)
+                    .ignore_then(t![int].map(|x| Array(Some(x)))),
                 t![']'].map(|_| Array(None)),
             ))
             .labelled("array")

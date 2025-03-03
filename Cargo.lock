@@ -138,6 +138,7 @@ dependencies = [
  "paste",
  "regex",
  "tinyvec",
+ "umath",
 ]
 
 [[package]]
@@ -321,6 +322,12 @@ name = "tinyvec_macros"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
+
+[[package]]
+name = "umath"
+version = "0.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42f74eb7957e3a63fa27bfa53c3d361e7ce3871e66f2518292a011eb8e2c00cc"
 
 [[package]]
 name = "unicode-ident"

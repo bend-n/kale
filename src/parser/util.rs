@@ -49,6 +49,9 @@ macro_rules! t {
     ('}') => {
         just(Token::ClosingBracket('}'))
     };
+    (int) => {
+        select! { Token::Int(x) => x }
+    };
 }
 macro_rules! parser {
     ($t:ty) => {
@@ -60,7 +63,9 @@ pub trait TakeSpan {
     fn tspn<T>(&mut self, x: T) -> Spanned<T>;
 }
 
-impl<'a, 'b> TakeSpan for MapExtra<'a, 'b, Input<'a>, chumsky::extra::Err<Error<'a>>> {
+impl<'a, 'b> TakeSpan
+    for MapExtra<'a, 'b, Input<'a>, chumsky::extra::Err<Error<'a>>>
+{
     fn tspn<T>(&mut self, x: T) -> Spanned<T> {
         Spanned::from((x, self.span()))
     }
@@ -72,9 +77,7 @@ macro_rules! spanned {
 }
 
 use chumsky::input::MapExtra;
-pub(crate) use parser;
-pub(crate) use spanned;
-pub(crate) use t;
+pub(crate) use {parser, spanned, t};
 
 pub trait Unit<T> {
     fn empty(&self) -> T;

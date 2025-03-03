@@ -1,6 +1,9 @@
 pub mod types;
+use chumsky::Parser;
+use chumsky::input::Stream;
+use chumsky::prelude::*;
+
 use crate::lexer::{Lexer, Token};
-use chumsky::{Parser, input::Stream, prelude::*};
 pub mod fun;
 pub mod util;
 use types::*;
@@ -24,7 +27,8 @@ impl<'s> Value<'s> {
 impl<'s> Expr<'s> {
     pub fn parse() -> parser![Spanned<Expr<'s>>] {
         recursive(|expr| {
-            let inline_expr: parser![Spanned<Expr>] = Value::parse().map(|x| x.map(Expr::Value));
+            let inline_expr: parser![Spanned<Expr>] =
+                Value::parse().map(|x| x.map(Expr::Value));
 
             let λ = Λ::parse(expr.clone());
             choice((
@@ -50,7 +54,7 @@ pub fn top<'s>() -> parser![Spanned<Λ<'s>>] {
 #[test]
 fn parse_expr() {
     // parse_s("a ← λ ( +-🍴 )", Expr::parse());
-    let src = r#"+↘️"#;
+    let src = r#"+↘"#;
     println!(
         "{:?}",
         crate::lexer::lex(src).map(|x| x.0).collect::<Vec<_>>()
