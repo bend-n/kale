@@ -125,9 +125,9 @@ impl Array {
 impl std::fmt::Debug for Array {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Array(x) => write!(f, "a{x:?}"),
-            Self::Int(x) => write!(f, "i{x:?}"),
-            Self::Float(x) => write!(f, "f{x:?}"),
+            Self::Array(x) => write!(f, "a{x:#?}"),
+            Self::Int(x) => write!(f, "i{x:#?}"),
+            Self::Float(x) => write!(f, "f{x:#?}"),
         }
     }
 }
@@ -1206,7 +1206,7 @@ impl<'s> Function<'s> {
             }
             Self::Fold(λ) => {
                 let a = pop!().assert_array(span)?;
-                assert!(dbg!(λ.argc()).input >= 2);
+                assert!(λ.argc().input >= 2);
                 let input = λ.argc().input - 1;
                 assert!(λ.argc().output == input);
                 let accumulator = stack.take(input).collect::<Vec<_>>();
