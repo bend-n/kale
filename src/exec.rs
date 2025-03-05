@@ -1,10 +1,11 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::ffi::CString;
 use std::fmt::Display;
 use std::hash::Hash;
-use std::iter::once;
+use std::iter::{once, successors};
 use std::mem::take;
 use std::ops::{Add, Deref, DerefMut};
-
+mod python;
 use chumsky::span::{SimpleSpan, Span as _};
 
 use crate::parser::fun::Function;
@@ -98,6 +99,11 @@ impl Array {
     fn len(&self) -> usize {
         each!(self, |x| x.len(), &Vec<_> => usize)
     }
+    fn windows(self, size: usize) -> Array {
+        each!(self, |x| Array::Array(
+            x.windows(size).map(|x| Array::from(x.to_vec())).collect(),
+        ), Vec<_> => Array)
+    }
     fn remove(&mut self, n: usize) {
         each!(self, |x| { x.remove(n); }, &mut Vec<_> => ())
     }
@@ -119,9 +125,9 @@ impl Array {
 impl std::fmt::Debug for Array {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Array(x) => x.fmt(f),
-            Self::Int(x) => x.fmt(f),
-            Self::Float(x) => x.fmt(f),
+            Self::Array(x) => write!(f, "a{x:?}"),
+            Self::Int(x) => write!(f, "i{x:?}"),
+            Self::Float(x) => write!(f, "f{x:?}"),
         }
     }
 }
@@ -279,6 +285,25 @@ impl<'s> Val<'s> {
             x => Err(Error::ef(span, "array", x.ty().spun(self.span))),
         }
     }
+    fn assert_utf8(
+        self: Spanned<Val<'s>>,
+        span: Span,
+    ) -> Result<Spanned<String>> {
+        self.assert_array(span)?.try_map(|x, s| match x {
+            Array::Int(x) => {
+                String::from_utf8(x.into_iter().map(|x| x as u8).collect())
+                    .map_err(|e| {
+                        Error::ef(
+                            span,
+                            "valid utf8",
+                            "invalid utf8".spun(s),
+                        )
+                        .note(e.utf8_error().to_string())
+                    })
+            }
+            x => Err(Error::ef(span, "array", x.ty().spun(s))),
+        })
+    }
     fn assert_map(
         self: Spanned<Val<'s>>,
         span: Span,
@@ -366,6 +391,9 @@ impl<'s, 'v> Default for Context<'s, 'v> {
 }
 
 impl<'s, 'v> Context<'s, 'v> {
+    fn all(&self) -> impl Iterator<Item = &Self> {
+        successors(Some(&*self), |x| x.inherits)
+    }
     fn inherits(x: &'v Context<'s, 'v>) -> Self {
         Self {
             inherits: Some(x),
@@ -401,9 +429,9 @@ impl<'s> Stack<'s> {
     fn take(
         &mut self,
         take: usize,
-    ) -> impl Iterator<Item = Spanned<Val<'s>>> {
+    ) -> impl Iterator<Item = Spanned<Val<'s>>> + ExactSizeIterator {
         let n = self.len();
-        self.drain(n - take..)
+        self.drain(n.saturating_sub(take)..)
     }
     pub fn of(x: impl Iterator<Item = Spanned<Val<'s>>>) -> Self {
         Self(vec![x.collect()])
@@ -553,18 +581,19 @@ impl Add<Argc> for Argc {
 fn size_fn<'s>(f: &Function<'s>) -> Argc {
     use Function::*;
     match f {
-        IndexHashMap | HashMap | Append | Length | Del | Fold(_)
-        | Mask | Group | Index | Sub | Add | Mul | Div | Xor | Mod
-        | Pow | Eq | Ne | BitAnd | Or | Ge | Le | Lt | Gt => {
+        Matches | Windows | IndexHashMap | HashMap | Append | Del
+        | Fold(_) | Mask | Group | Index | Sub | Add | Mul | Div | Xor
+        | Mod | Pow | Eq | Ne | BitAnd | Or | Ge | Le | Lt | Gt => {
             Argc::takes(2).into(1)
         }
+        Python(x) => *x,
         &Take(x) => Argc::takes(x as _).into(x as _),
         With(x) => Argc::takes(1).into(x.argc().output),
         Map(x) => {
             Argc::takes(1 + (x.argc().input.saturating_sub(1))).into(1)
         }
-        Identity | Setify | Sort | Range | Reduce(_) | Open | Neg
-        | Sqrt | Not => Argc::takes(1).into(1),
+        Length | Identity | Setify | Sort | Range | Reduce(_) | Open
+        | Neg | Sqrt | Not => Argc::takes(1).into(1),
         Flip => Argc::takes(2).into(2),
         Dup => Argc::takes(1).into(2),
         Zap(None) | Zap(Some(0)) => Argc::takes(1).into(0),
@@ -581,7 +610,7 @@ fn size_fn<'s>(f: &Function<'s>) -> Argc {
         Both(x, n) => {
             Argc::takes(x.argc().input * n).into(x.argc().output * n)
         }
-        Ident(x) => Argc::takes(0).into(1),
+        Ident(_) => Argc::takes(0).into(1),
         EmptySet => Argc::takes(0).into(1),
         _ => Argc {
             input: 0,
@@ -623,7 +652,7 @@ fn exec_lambda<'s>(
         match elem {
             Expr::Function(x) => match x {
                 Function::Ident(x) => {
-                    let (x, span) = std::iter::successors(Some(&*c), |x| x.inherits)
+                    let (x, span) = c.all()
                         .find_map(|c| c.variables.get(x))
                         .unwrap_or_else(|| {
                             println!("couldnt find definition for variable {x} at ast node {x:?}");
@@ -1043,22 +1072,7 @@ impl<'s> Function<'s> {
                 stack.push(out.spun(span));
             }
             Self::Open => {
-                let x = pop!().assert_array(span)?.try_map(
-                    |x, s| match x {
-                        Array::Int(x) => String::from_utf8(
-                            x.into_iter().map(|x| x as u8).collect(),
-                        )
-                        .map_err(|e| {
-                            Error::ef(
-                                span,
-                                "valid utf8",
-                                "invalid utf8".spun(s),
-                            )
-                            .note(e.utf8_error().to_string())
-                        }),
-                        x => Err(Error::ef(span, "array", x.ty().spun(s))),
-                    },
-                )?;
+                let x = pop!().assert_utf8(span)?;
                 stack.push(
                     Val::Array(Array::Int(
                         std::fs::read(&*x)
@@ -1253,7 +1267,7 @@ impl<'s> Function<'s> {
                 }
             }
             Self::Length => {
-                let x = stack.last().ok_or(Error::stack_empty(span))?;
+                let x = pop!();
                 stack.push(
                     Val::Int(match &x.inner {
                         Val::Array(x) => x.len(),
@@ -1291,6 +1305,29 @@ impl<'s> Function<'s> {
                         .clone()
                         .spun(span),
                 );
+            }
+            Self::Windows => {
+                let size = pop!().assert_int(span)?;
+                let array = pop!().assert_array(span)?;
+                stack.push(array.map(|x| {
+                    Val::Array(x.windows(size.inner.try_into().unwrap()))
+                }));
+            }
+            Self::Matches => {
+                let a = pop!().assert_array(span)?;
+                let b = pop!().assert_array(span)?;
+                stack.push(Val::Int((a == b) as i128).spun(span));
+            }
+            Self::Python(x) => {
+                let input = pop!()
+                    .assert_utf8(span)?
+                    .try_map(|x, _| {
+                        let mut x = x.into_bytes();
+                        x.push(0);
+                        CString::from_vec_with_nul(x)
+                    })
+                    .map_err(|_| Error::lazy(span, "nooo has nul"))?;
+                python::exec(span, input, stack, x, c)?;
             }
             _ => (),
         }

@@ -33,7 +33,7 @@ impl<'s> Expr<'s> {
             let λ = Λ::parse(expr.clone());
             choice((
                 inline_expr,
-                Function::parse(λ.clone().map(Spanned::unspan()))
+                Function::parse(λ.clone().map(Spanned::unspan))
                     .map(Expr::Function)
                     .map_with(spanned!()),
                 λ.map(|x| x.map(|x| Expr::Value(Value::Lambda(x)))),

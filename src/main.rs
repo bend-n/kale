@@ -1,9 +1,11 @@
 #![feature(
     let_chains,
     try_trait_v2,
+    if_let_guard,
     iter_intersperse,
     iterator_try_reduce,
     formatting_options,
+    iterator_try_collect,
     impl_trait_in_bindings,
     arbitrary_self_types
 )]

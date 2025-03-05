@@ -71,11 +71,12 @@ tokens! {
     "→" => Place,
 
     "≡" => Eq,
+    "≣" => Matches,
     "≢" => Ne,
     "+" => Add,
     "-" => Sub,
     "×" => Mul,
-    "*" => Pow,
+    "ⁿ" => Pow,
     "<" => Lt,
     ">" => Gt,
     "≤" => Le,
@@ -113,7 +114,6 @@ tokens! {
     "≣#️⃣" => Get,
     "∅" => Set,
     "💽" => Append,
-    "🚧" => Split,
     "⬅️" => First,
     "➡" => Last,
     "↘️" => Reduce,
@@ -122,9 +122,10 @@ tokens! {
     "🐋" => If,
     "🐬" => EagerIf,
     "🇳🇿" => Zip,
+    "🪟" => Windows,
     "🧐" => Debug,
     "." => Identity,
-
+    "🐍" => Python,
 }
 
 pub fn lex(s: &str) -> Lexer {

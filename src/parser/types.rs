@@ -110,11 +110,18 @@ pub enum Expr<'s> {
     Value(Value<'s>),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Hash)]
 pub struct Spanned<T> {
     pub(crate) span: SimpleSpan,
     pub inner: T,
 }
+
+impl<T: PartialEq> PartialEq for Spanned<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+impl<T: PartialEq> Eq for Spanned<T> {}
 impl<T: std::fmt::Debug> std::fmt::Debug for Spanned<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.inner.fmt(f)
@@ -156,8 +163,8 @@ impl<T> Spanned<T> {
         f(inner, span).map(|x| x.spun(span))
     }
 
-    pub fn unspan() -> impl Fn(Spanned<T>) -> T + Copy {
-        |x| x.inner
+    pub fn unspan(self) -> T {
+        self.inner
     }
 
     pub fn span(&self) -> SimpleSpan {

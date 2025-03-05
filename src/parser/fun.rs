@@ -3,6 +3,7 @@ use chumsky::prelude::*;
 
 use super::types::*;
 use super::util::*;
+use crate::exec::Argc;
 use crate::lexer::Token;
 
 #[derive(Debug, Clone)]
@@ -16,6 +17,8 @@ pub enum Function<'s> {
     Map(Spanned<Λ<'s>>),
     Dup,
     Flip,
+    Python(Argc),
+    Matches,
     Eq,
     Reverse,
     Zap(Option<u64>),
@@ -26,6 +29,7 @@ pub enum Function<'s> {
     IndexHashMap,
     Not,
     Mul,
+    Windows,
     Pow,
     Type,
     Ne,
@@ -95,6 +99,7 @@ impl<'s> Function<'s> {
             Token::HashMap => HashMap,
             Token::Get => IndexHashMap,
             Token::Sub => Sub,
+            Token::Windows => Windows,
             Token::Mul => Mul,
             Token::Pow => Pow,
             Token::Sqrt => Sqrt,
@@ -122,10 +127,10 @@ impl<'s> Function<'s> {
             Token::Mod => Mod,
             Token::Open => Open,
             Token::Mask => Mask,
-            Token::Split => Split,
             Token::First => First,
             Token::Ne => Ne,
             Token::Type => Type,
+            Token::Matches => Matches,
             Token::Last => Last,
             Token::Ident(x) => Ident(x),
         }
@@ -197,6 +202,11 @@ impl<'s> Function<'s> {
             one![With],
             just(Token::Zap).ignore_then(t![int]).map(Some).map(Zap),
             t!['['].ignore_then(t![int]).map(Take),
+            just(Token::Python)
+                .ignore_then(t![int])
+                .then_ignore(t![->])
+                .then(t![int])
+                .map(|(a, b)| Python(Argc::takes(a as _).into(b as _))),
             choice((
                 just(Token::ArrayN)
                     .ignore_then(t![int].map(|x| Array(Some(x)))),
