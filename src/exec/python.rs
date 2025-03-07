@@ -50,6 +50,33 @@ impl<'py, 's> FromPyObject<'py> for Val<'s> {
             () if let Ok(x) = x.extract::<i128>() => Val::Int(x),
             () if let Ok(x) = x.extract::<f64>() => Val::Float(x),
             () if let Ok(x) = x.extract::<bool>() => Val::Int(x as i128),
+            () if let Ok(x) = x.downcast::<PyList>() => {
+                if let Ok(y) = x.get_item(0) {
+                    match () {
+                        () if y.is_instance_of::<PyFloat>() => {
+                            Val::Array(Array::Float(
+                                x.into_iter()
+                                    .map(|x| x.extract::<f64>())
+                                    .try_collect()?,
+                            ))
+                        }
+                        () if y.is_instance_of::<PyInt>() => {
+                            Val::Array(Array::Int(
+                                x.into_iter()
+                                    .map(|x| x.extract::<i128>())
+                                    .try_collect()?,
+                            ))
+                        }
+                        _ => {
+                            return Err(PyTypeError::new_err(
+                                "bad array types",
+                            ));
+                        }
+                    }
+                } else {
+                    Val::Array(Array::Int(vec![]))
+                }
+            }
             () if let Ok(x) = x.downcast::<PySet>() => Val::Set(
                 x.into_iter()
                     .map(|x| x.extract::<Val<'s>>())
@@ -78,20 +105,20 @@ pub fn exec<'s>(
             .for_each(|(k, v)| {
                 _ = locals.set_item(k, v);
             });
+        let s = stack
+            .take(argc.input)
+            .map(|Spanned { inner, span }| {
+                let t = inner.ty();
+                inner.into_pyobject(g).map_err(|y| (y, t, span))
+            })
+            .try_collect::<Vec<_>>()
+            .map_err(|(e, ty, span)| super::Error {
+                name: format!("element ({ty}) → python ({e}) failure"),
+                message: "here".to_string().spun(span),
+                ..Default::default()
+            })?;
         locals
-            .set_item(
-                "s",
-                PyList::new(
-                    g,
-                    stack.take(argc.input).map(Spanned::unspan),
-                )
-                .map_err(|_| {
-                    Error::lazy(
-                        span,
-                        "you must have a lambda or something",
-                    )
-                })?,
-            )
+            .set_item("s", PyList::new(g, s).unwrap())
             .map_err(|_| Error::lazy(span, "what is wrong with python"))?;
         g.run(&code, None, Some(&locals)).map_err(|x| {
             x.display(g);
