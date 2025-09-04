@@ -583,7 +583,7 @@ fn size_fn<'s>(f: &Function<'s>) -> Argc {
     match f {
         Matches | Windows | IndexHashMap | HashMap | Append | Del
         | Fold(_) | Mask | Group | Index | Sub | Add | Mul | Div | Xor
-        | Mod | Pow | Eq | Ne | BitAnd | Or | Ge | Le | Lt | Gt => {
+        | Mod | Pow | Eq | Ne | BitAnd | Or | Ge | Le | Lt | Gt | In => {
             Argc::takes(2).into(1)
         }
         Python(x) => *x,
@@ -995,7 +995,6 @@ impl<'s> Function<'s> {
             }
             Self::Both(λ, n) => {
                 let λargs = λ.argc();
-                dbg!(λargs.input);
                 let mut s = Stack::of(stack.take(λargs.input * n));
                 for _ in 0..n {
                     let mut a = Stack::of(s.take(λargs.input));
@@ -1328,6 +1327,15 @@ impl<'s> Function<'s> {
                     })
                     .map_err(|_| Error::lazy(span, "nooo has nul"))?;
                 python::exec(span, input, stack, x, c)?;
+            }
+            Self::In => {
+                let elem = pop!().assert_array(span)?;
+                let item = pop!();
+                stack.push(
+                    Val::Int(elem.iter().find(|x| *x == *item).is_some()
+                        as i128)
+                    .spun(span),
+                );
             }
             _ => (),
         }

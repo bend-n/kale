@@ -86,6 +86,7 @@ tokens! {
     "∧" => BitAnd,
     "∨" => Or,
     "⊕" => Xor,
+    "∈" => In,
 
     "!" => Not,
     "¯" => Neg,
