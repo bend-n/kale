@@ -596,7 +596,7 @@ fn size_fn<'s>(f: &Function<'s>) -> Argc {
         | Neg | Sqrt | Not => Argc::takes(1).into(1),
         Flip => Argc::takes(2).into(2),
         Dup => Argc::takes(1).into(2),
-        Zap(None) | Zap(Some(0)) => Argc::takes(1).into(0),
+        Define(_) | Zap(None) | Zap(Some(0)) => Argc::takes(1).into(0),
         &Zap(Some(x)) => Argc::takes(x as _).into(x as usize - 1),
         Array(None) => {
             Argc::takes(5 /*all */).into(1)
