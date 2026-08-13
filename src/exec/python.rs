@@ -44,25 +44,27 @@ impl<'s, 'py> IntoPyObject<'py> for Val<'s> {
     }
 }
 
-impl<'py, 's> FromPyObject<'py> for Val<'s> {
-    fn extract_bound(x: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py, 's> FromPyObject<'a, 'py> for Val<'s> {
+    type Error = PyErr;
+    fn extract(x: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         Ok(match () {
             () if let Ok(x) = x.extract::<i128>() => Val::Int(x),
             () if let Ok(x) = x.extract::<f64>() => Val::Float(x),
             () if let Ok(x) = x.extract::<bool>() => Val::Int(x as i128),
-            () if let Ok(x) = x.downcast::<PyList>() => {
+            () if let Ok(x) = x.cast::<PyList>() => {
                 if let Ok(y) = x.get_item(0) {
                     match () {
                         () if y.is_instance_of::<PyFloat>() => {
                             Val::Array(Array::Float(
-                                x.into_iter()
+                                x.clone()
+                                    .iter()
                                     .map(|x| x.extract::<f64>())
                                     .try_collect()?,
                             ))
                         }
                         () if y.is_instance_of::<PyInt>() => {
                             Val::Array(Array::Int(
-                                x.into_iter()
+                                x.iter()
                                     .map(|x| x.extract::<i128>())
                                     .try_collect()?,
                             ))
@@ -77,10 +79,8 @@ impl<'py, 's> FromPyObject<'py> for Val<'s> {
                     Val::Array(Array::Int(vec![]))
                 }
             }
-            () if let Ok(x) = x.downcast::<PySet>() => Val::Set(
-                x.into_iter()
-                    .map(|x| x.extract::<Val<'s>>())
-                    .try_collect()?,
+            () if let Ok(x) = x.cast::<PySet>() => Val::Set(
+                x.iter().map(|x| x.extract::<Val<'s>>()).try_collect()?,
             ),
             _ => return Err(PyTypeError::new_err("bad types")),
         })
@@ -94,8 +94,8 @@ pub fn exec<'s>(
     argc: super::Argc,
     context: &Context<'s, '_>,
 ) -> super::Result<()> {
-    pyo3::prepare_freethreaded_python();
-    Python::with_gil(|g| {
+    Python::initialize();
+    Python::attach(|g| {
         let locals = PyDict::new(g);
         context
             .all()
@@ -125,7 +125,7 @@ pub fn exec<'s>(
             Error::lazy(code.span, "you wrote your 🐍 (󰌠 python) wrong")
         })?;
         let x = locals.get_item("s").unwrap().unwrap();
-        let x = x.downcast::<PyList>().unwrap();
+        let x = x.cast::<PyList>().unwrap();
         let n = x.len();
         stack.extend(
             x.into_iter()

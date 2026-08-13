@@ -497,14 +497,17 @@ impl Error {
             notes: vec![],
         }
     }
-
+    #[track_caller]
     pub fn ef(
         span: Span,
         expected: impl Display,
         found: Spanned<impl Display>,
     ) -> Self {
         Error {
-            name: "type mismatch".to_string(),
+            name: format!(
+                "type mismatch @ {:?}",
+                std::panic::Location::caller()
+            ),
             labels: vec![
                 format!("found {found}, not an {expected}")
                     .spun(found.span()),
@@ -701,18 +704,19 @@ fn pervasive_binop<'a>(
     b: &Spanned<Val<'a>>,
     map: impl Fn(&Val<'a>, &Val<'a>) -> Result<Val<'a>> + Copy,
 ) -> Result<Val<'a>> {
+    // dbg!(a, b);
     match (&a.inner, &b.inner) {
         (Val::Array(x), Val::Array(y)) => {
-            if x.len() != y.len() {
-                return Err(Error {
-                    name: "argument length mismatch".to_string(),
-                    message: "for this function".to_string().spun(span),
-                    labels: vec![],
-                    notes: vec![],
-                }
-                .label("first argument".spun(a.span))
-                .label("second argument".spun(b.span)));
-            }
+            // if x.len() != y.len() {
+            //     return Err(Error {
+            //         name: "argument length mismatch".to_string(),
+            //         message: "for this function".to_string().spun(span),
+            //         labels: vec![],
+            //         notes: vec![],
+            //     }
+            //     .label("first argument".spun(a.span))
+            //     .label("second argument".spun(b.span)));
+            // }
             if x.ty() != y.ty() {
                 return Err(Error {
                     name: "array type mismatch".to_string(),
@@ -758,7 +762,11 @@ fn pervasive_binop<'a>(
             .collect::<Result<_>>()
             .and_then(|x| Array::new(span, x))
             .map(Val::Array),
-        (x, y) => map(x, y),
+        // (x, Val::Array(x)) if x.len() == 1 => map(x, y),
+        (x, y) => {
+            // println!("{x:?} {y:?}");
+            map(x, y)
+        }
     }
 }
 

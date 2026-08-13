@@ -129,7 +129,7 @@ tokens! {
     "🐍" => Python,
 }
 
-pub fn lex(s: &str) -> Lexer {
+pub fn lex(s: &str) -> Lexer<'_> {
     Lexer {
         inner: Token::lexer(s).spanned(),
     }
@@ -158,7 +158,7 @@ impl<'s> Iterator for Lexer<'s> {
 
 #[test]
 fn lexer() {
-    let mut lex = lex(r#""1abc25hriwm4"
+    let lex = lex(r#""1abc25hriwm4"
     / { str → int } /
     line ← λ (
         '0'>🔎'9'<🔎

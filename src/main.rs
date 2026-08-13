@@ -1,7 +1,4 @@
 #![feature(
-    let_chains,
-    try_trait_v2,
-    if_let_guard,
     iter_intersperse,
     iterator_try_reduce,
     formatting_options,
