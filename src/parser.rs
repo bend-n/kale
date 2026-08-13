@@ -1,12 +1,12 @@
 pub mod types;
 use chumsky::Parser;
 use chumsky::input::Stream;
-use chumsky::prelude::*;
+use chumsky::prelude::{Input, *};
 
 use crate::lexer::{Lexer, Token};
 pub mod fun;
 pub mod util;
-use types::*;
+use types::{Spanned, *};
 use util::*;
 
 use self::fun::Function;

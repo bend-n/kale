@@ -6,7 +6,8 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chumsky = { git = "https://github.com/zesterer/chumsky",version = "1.0.0-alpha.8", hash="d12869af1701647e0f0034aef1cce14fa2e170be", features = [
+
+chumsky = { git = "https://codeberg.org/zesterer/chumsky", hash="ba2122d298639b9ecbf3289392b90dae70a4b0ef", features = [
     "nightly",
 ], default-features = false }
 beef = "0.5.2"

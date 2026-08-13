@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::fmt::FormattingOptions;
 use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
@@ -6,7 +5,6 @@ use std::ops::{Deref, DerefMut};
 use beef::lean::Cow;
 use chumsky::input::{MappedInput, Stream};
 use chumsky::prelude::*;
-use umath::FF64;
 
 use crate::exec::Argc;
 use crate::lexer::Token;
@@ -14,6 +12,7 @@ use crate::parser::util::Spanner;
 pub type Span = SimpleSpan<usize>;
 pub type Error<'s> = Rich<'s, Token<'s>, Span>;
 pub type Input<'s> = MappedInput<
+    's,
     Token<'s>,
     Span,
     Stream<crate::lexer::Lexer<'s>>,

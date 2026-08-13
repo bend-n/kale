@@ -1,7 +1,7 @@
 use chumsky::Parser;
 use chumsky::prelude::*;
 
-use super::types::*;
+use super::types::{Spanned, *};
 use super::util::*;
 use crate::exec::Argc;
 use crate::lexer::Token;

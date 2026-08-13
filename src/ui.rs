@@ -41,7 +41,7 @@ pub fn display_execution<T>(
     let writer = StandardStream::stderr(ColorChoice::Always);
     let mut config = codespan_reporting::term::Config::default();
     config.chars = Chars::box_drawing();
-    codespan_reporting::term::emit(
+    codespan_reporting::term::emit_to_write_style(
         &mut writer.lock(),
         &config,
         &files,
@@ -112,7 +112,7 @@ pub fn display<T>(
         let writer = StandardStream::stderr(ColorChoice::Always);
         let mut config = codespan_reporting::term::Config::default();
         config.chars = Chars::box_drawing();
-        codespan_reporting::term::emit(
+        codespan_reporting::term::emit_to_write_style(
             &mut writer.lock(),
             &config,
             &files,

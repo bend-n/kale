@@ -51,8 +51,8 @@ checksum = "3a8241f3ebb85c056b509d4327ad0358fbbba6ffb340bf388f26350aeda225b1"
 
 [[package]]
 name = "chumsky"
-version = "1.0.0-alpha.8"
-source = "git+https://github.com/zesterer/chumsky#d12869af1701647e0f0034aef1cce14fa2e170be"
+version = "0.13.0"
+source = "git+https://codeberg.org/zesterer/chumsky#ba2122d298639b9ecbf3289392b90dae70a4b0ef"
 dependencies = [
  "hashbrown",
  "unicode-ident",
