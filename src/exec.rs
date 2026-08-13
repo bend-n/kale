@@ -362,6 +362,11 @@ impl From<bool> for Val<'_> {
         Self::Int(value as i128)
     }
 }
+impl From<Array> for Val<'_> {
+    fn from(value: Array) -> Self {
+        Self::Array(value)
+    }
+}
 
 impl std::fmt::Debug for Val<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -585,10 +590,9 @@ fn size_fn<'s>(f: &Function<'s>) -> Argc {
     use Function::*;
     match f {
         Matches | Windows | IndexHashMap | HashMap | Append | Del
-        | Fold(_) | Mask | Group | Index | Sub | Add | Mul | Div | Xor
-        | Mod | Pow | Eq | Ne | BitAnd | Or | Ge | Le | Lt | Gt | In => {
-            Argc::takes(2).into(1)
-        }
+        | Fold(_) | Mask | Group | Index | First | Last | Sub | Add
+        | Mul | Div | Xor | Mod | Pow | Eq | Ne | BitAnd | Or | Ge
+        | Le | Lt | Gt | In => Argc::takes(2).into(1),
         Python(x) => *x,
         &Take(x) => Argc::takes(x as _).into(x as _),
         With(x) => Argc::takes(1).into(x.argc().output),
@@ -1054,6 +1058,30 @@ impl<'s> Function<'s> {
                 exec_lambda(λ, &mut Context::inherits(c), &mut a)?;
                 stack.extend(a.drain(..));
             }
+            Self::First => {
+                let array = pop!().assert_array(span)?;
+                stack.push(
+                    each!(array.inner, |x| Ok(Val::from(x.get(0).cloned().ok_or_else(|| {
+                        Error {
+                            name: format!("array is empty"),
+                            message: "here".to_string().spun(span),
+                            ..Default::default()
+                        }
+                    })?)),  Vec<_> => Result<Val>)?.spun(span),
+                );
+            }
+            Self::Last => {
+                let array = pop!().assert_array(span)?;
+                stack.push(
+                    each!(array.inner, |x| Ok(Val::from(x.get(x.len()-1).cloned().ok_or_else(|| {
+                        Error {
+                            name: format!("array is empty"),
+                            message: "here".to_string().spun(span),
+                            ..Default::default()
+                        }
+                    })?)),  Vec<_> => Result<Val>)?.spun(span),
+                );
+            }
             Self::Index => {
                 let index = pop!().assert_array(span)?.assert_int(span)?;
                 let array = pop!().assert_array(span)?;
@@ -1345,7 +1373,7 @@ impl<'s> Function<'s> {
                     .spun(span),
                 );
             }
-            _ => (),
+            _ => do yeet Error::lazy(span, "unimplemented?"),
         }
         Ok(())
     }

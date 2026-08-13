@@ -20,7 +20,7 @@ pub enum Function<'s> {
     Python(Argc),
     Matches,
     Eq,
-    Reverse,
+    // Reverse,
     Zap(Option<u64>),
     Del,
     Debug,

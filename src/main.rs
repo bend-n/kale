@@ -1,4 +1,5 @@
 #![feature(
+    yeet_expr,
     iter_intersperse,
     iterator_try_reduce,
     formatting_options,
