@@ -4,9 +4,10 @@ use std::fmt::Display;
 use std::hash::Hash;
 use std::iter::{once, successors};
 use std::mem::take;
-use std::ops::{Add, Deref, DerefMut};
+use std::ops::{Add, Deref, DerefMut, Index};
 mod python;
 use chumsky::span::{SimpleSpan, Span as _};
+use itertools::chain;
 
 use crate::parser::fun::Function;
 use crate::parser::types::{Span, *};
@@ -56,7 +57,16 @@ impl Hash for Array {
         }
     }
 }
-
+impl std::cmp::PartialOrd for Array {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Array::Array(a), Array::Array(b)) => a.partial_cmp(b),
+            (Array::Int(a), Array::Int(b)) => a.partial_cmp(b),
+            (Array::Float(a), Array::Float(b)) => a.partial_cmp(b),
+            _ => None,
+        }
+    }
+}
 impl Array {
     fn ty(&self) -> &'static str {
         match self {
@@ -85,7 +95,11 @@ macro_rules! each {
         }
     };
 }
+
 impl Array {
+    fn get(&self, index: usize) -> Option<Val<'static>> {
+        each!(self, |x| x.get(index).cloned().map(Val::from), &Vec<_> => Option<Val>)
+    }
     fn sort(&mut self) {
         match self {
             Array::Int(x) => x.sort_unstable(),
@@ -93,7 +107,9 @@ impl Array {
                 assert!(x == x && !x.is_infinite());
                 umath::FF64::new(*x)
             }),
-            Array::Array(_) => panic!(),
+            Array::Array(x) => x.sort_by(|a, b| {
+                a.partial_cmp(&b).expect("no ord provided")
+            }),
         };
     }
     fn len(&self) -> usize {
@@ -125,9 +141,17 @@ impl Array {
 impl std::fmt::Debug for Array {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            // Self::Int(x) => write!(
+            //     f,
+            //     "{}",
+            //     std::str::from_utf8(
+            //         &x.iter().map(|&x| x as _).collect::<Vec<_>>()
+            //     )
+            //     .unwrap()
+            // ),
             Self::Array(x) => write!(f, "a{x:#?}"),
-            Self::Int(x) => write!(f, "i{x:#?}"),
-            Self::Float(x) => write!(f, "f{x:#?}"),
+            Self::Int(x) => write!(f, "i{x:?}"),
+            Self::Float(x) => write!(f, "f{x:?}"),
         }
     }
 }
@@ -258,6 +282,19 @@ pub enum Val<'s> {
     Lambda(Λ<'s>),
     Int(i128),
     Float(f64),
+}
+impl<'s> std::cmp::PartialOrd for Val<'s> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Val::Array(a), Val::Array(b)) => a.partial_cmp(b),
+            // (Val::Map(a), Val::Map(b)) => a.partial_cmp(b),
+            // (Val::Set(a), Val::Set(b)) => a.partial_cmp(b),
+            (Val::Lambda(a), Val::Lambda(b)) => a.partial_cmp(b),
+            (Val::Int(a), Val::Int(b)) => a.partial_cmp(b),
+            (Val::Float(a), Val::Float(b)) => a.partial_cmp(b),
+            _ => None,
+        }
+    }
 }
 type Map<'s> = HashMap<Val<'s>, Val<'s>>;
 impl Eq for Val<'_> {}
@@ -1236,6 +1273,65 @@ impl<'s> Function<'s> {
                 // vec![1, 2].iter().reduce(|x, y| {});
                 // if λ.argc() !=
             }
+            Self::Scan(λ) => {
+                let a = pop!().assert_array(span)?;
+                assert!(λ.argc().output == 1);
+                assert!(λ.argc().input >= 2);
+                if λ.argc().input == 2 {
+                    let mut ar = a.iter();
+                    let mut acc =
+                        ar.next().ok_or(Error::lazy(span, "bad scan"))?;
+                    stack.push(
+                        Val::from(Array::new(
+                            span,
+                            chain(
+                                [Ok(Val::from(acc.clone()).spun(a.span))],
+                                ar.map(|x| -> Val<'s> { x }).map(|x| {
+                                    let mut s = Stack::of(
+                                        [x, acc.clone()]
+                                            .into_iter()
+                                            .map(|y| y.spun(a.span)),
+                                    );
+                                    exec_lambda(
+                                        λ.clone(),
+                                        &mut Context::inherits(c),
+                                        &mut s,
+                                    )
+                                    .map(|()| s.pop().unwrap())
+                                    .inspect(|x| acc = x.inner.clone())
+                                }),
+                            )
+                            .collect::<Result<Vec<_>>>()?,
+                        )?)
+                        .spun(span),
+                    );
+                }
+                // vec![1, 2].iter().reduce(|x, y| {});
+                // if λ.argc() !=
+            }
+            Self::Zip => {
+                let a = pop!().assert_array(span)?;
+                let b = pop!().assert_array(span)?;
+                // assert!(a.len() == b.len(), "zip");
+
+                stack.push(
+                    Val::Array(Array::new(
+                        span,
+                        a.iter()
+                            .zip(b.iter())
+                            .map(|(a, b)| {
+                                Array::new(
+                                    span,
+                                    vec![a.spun(span), b.spun(span)],
+                                )
+                                .map(Val::Array)
+                                .map(|x| x.spun(span))
+                            })
+                            .collect::<Result<Vec<_>>>()?,
+                    )?)
+                    .spun(span),
+                );
+            }
             Self::Debug => {
                 println!("stack: {:?} @ {span}", stack);
             }
@@ -1289,8 +1385,16 @@ impl<'s> Function<'s> {
                 let element = pop!();
                 let container =
                     stack.last_mut().ok_or(Error::stack_empty(span))?;
+                dbg!(&container.inner);
                 match &mut container.inner {
-                    Val::Array(x) => {}
+                    Val::Array(Array::Int(x)) => {
+                        match element.inner {
+                            Val::Array(Array::Int(y)) => x.extend(y),
+                            _ => unimplemented!(),
+                        }
+                        // match x {}
+                        // x.extend(element);
+                    }
                     Val::Set(x) => drop(x.insert(element.inner)),
                     y => {
                         return Err(Error::ef(
@@ -1373,6 +1477,7 @@ impl<'s> Function<'s> {
                     .spun(span),
                 );
             }
+            Self::Identity => {}
             _ => do yeet Error::lazy(span, "unimplemented?"),
         }
         Ok(())

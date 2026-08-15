@@ -11,7 +11,7 @@ macro_rules! tokens {
         #[derive(Logos, Debug, PartialEq, Clone)]
         #[logos(skip r"[\n\s]+")]
         #[allow(dead_code)]
-        pub enum Token<'strings> {
+        pub(crate) enum Token<'strings> {
             #[regex("/[^\n/]+/?", priority = 8)]
             Comment(&'strings str),
             #[regex(r"[0-9]+", |lex| lex.slice().parse().ok())]
@@ -118,6 +118,7 @@ tokens! {
     "⬅️" => First,
     "➡" => Last,
     "↘️" => Reduce,
+    "↖" => Scan,
     "⏭️" => Fold,
     "🗺" => Map,
     "🐋" => If,
@@ -140,7 +141,7 @@ fn chr<'src, const CHR: char>(
 ) -> Result<char, ()> {
     Ok(CHR)
 }
-pub struct Lexer<'s> {
+pub(crate) struct Lexer<'s> {
     inner: SpannedIter<'s, Token<'s>>,
 }
 

@@ -57,6 +57,7 @@ pub enum Function<'s> {
     First,
     Last,
     Reduce(Spanned<Λ<'s>>),
+    Scan(Spanned<Λ<'s>>),
     Range,
     With(Spanned<Λ<'s>>),
     HashMap,
@@ -199,6 +200,7 @@ impl<'s> Function<'s> {
                 .map(|(a, b)| Both(a, b))
                 .labelled("both"),
             one![Reduce],
+            one![Scan],
             one![Fold],
             one![Map],
             one![With],
