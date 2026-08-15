@@ -6,74 +6,8 @@ use super::util::*;
 use crate::exec::Argc;
 use crate::lexer::Token;
 
-#[derive(Debug, Clone)]
-pub enum Function<'s> {
-    Both(Spanned<Λ<'s>>, usize),
-    And(Vec<Spanned<Λ<'s>>>),
-    Take(u64),
-    If { then: Λ<'s>, or: Λ<'s> },
-    Array(Option<u64>),
-    Append,
-    Map(Spanned<Λ<'s>>),
-    Dup,
-    Flip,
-    Python(Argc),
-    Matches,
-    Eq,
-    // Reverse,
-    Zap(Option<u64>),
-    Del,
-    Debug,
-    Add,
-    Sub,
-    IndexHashMap,
-    Not,
-    Mul,
-    Windows,
-    Pow,
-    Type,
-    Ne,
-    Merge,
-    Sqrt,
-    Lt,
-    Gt,
-    Ge,
-    Le,
-    Shl,
-    Shr,
-    Neg,
-    BitAnd,
-    Length,
-    Or,
-    Xor,
-    Div,
-    Fold(Spanned<Λ<'s>>),
-    Mod,
-    Index,
-    Mask,
-    Group,
-    Split,
-    Open,
-    First,
-    Last,
-    Reduce(Spanned<Λ<'s>>),
-    Scan(Spanned<Λ<'s>>),
-    Range,
-    With(Spanned<Λ<'s>>),
-    HashMap,
-    Call,
-    Sort,
-    Zip,
-    Identity,
-    EmptySet,
-    In,
-    Setify,
-    Ident(&'s str),
-    Define(&'s str),
-}
-
 impl<'s> Λ<'s> {
-    pub fn parse(
+    pub(crate) fn parse(
         exp: parser![Spanned<Expr<'s>>],
     ) -> parser![Spanned<Self>] {
         exp.repeated()
@@ -85,62 +19,11 @@ impl<'s> Λ<'s> {
 }
 
 impl<'s> Function<'s> {
-    pub fn parse(λ: parser![Λ<'s>]) -> parser![Self] {
+    pub(crate) fn parse(λ: parser![Λ<'s>]) -> parser![Self] {
         use Function::*;
-        let basic = select! {
-            Token::Dup => Dup,
-            Token::Debug => Debug,
-            Token::Flip => Flip,
-            // Token::Reverse => Reverse,
-            Token::Zap => Zap(None),
-            Token::Add => Add,
-            Token::ClosingBracket('}') => Setify,
-            Token::Set => EmptySet,
-            Token::Identity => Identity,
-            Token::Del => Del,
-            Token::HashMap => HashMap,
-            Token::Get => IndexHashMap,
-            Token::Sub => Sub,
-            Token::Windows => Windows,
-            Token::Mul => Mul,
-            Token::Pow => Pow,
-            Token::Sqrt => Sqrt,
-            Token::Lt => Lt,
-            Token::Not => Not,
-            Token::In => In,
-            Token::Index => Index,
-            Token::Merge => Merge,
-            Token::Shl => Shl,
-            Token::Group => Group,
-            Token::Shr => Shr,
-            Token::Append => Append,
-            Token::Neg => Neg,
-            Token::Eq => Eq,
-            Token::Gt => Gt,
-            Token::Ge => Ge,
-            Token::Length => Length,
-            Token::Range => Range,
-            Token::Le => Le,
-            Token::BitAnd => BitAnd,
-            Token::Or => Or,
-            Token::Xor => Xor,
-            Token::Sort => Sort,
-            Token::Zip => Zip,
-            Token::Div => Div,
-            Token::Mod => Mod,
-            Token::Open => Open,
-            Token::Mask => Mask,
-            Token::First => First,
-            Token::Ne => Ne,
-            Token::Type => Type,
-            Token::Matches => Matches,
-            Token::Last => Last,
-            Token::Ident(x) => Ident(x),
-        }
-        .labelled("token");
 
         let fn_param = choice((
-            basic
+            Self::basic()
                 .map_with(|x, e| {
                     Λ::of(vec![Expr::Function(x).spun(e.span())])
                 })
@@ -212,7 +95,7 @@ impl<'s> Function<'s> {
                 .then(t![int])
                 .map(|(a, b)| Python(Argc::takes(a as _).into(b as _))),
             choice((
-                just(Token::ArrayN)
+                just(Token::Array)
                     .ignore_then(t![int].map(|x| Array(Some(x)))),
                 t![']'].map(|_| Array(None)),
             ))
@@ -235,7 +118,7 @@ impl<'s> Function<'s> {
                 .labelled("if")
                 .boxed(),
             t![->].ignore_then(t![ident]).map(Define).labelled("def"),
-            basic,
+            Self::basic(),
         ))
         .boxed()
         .labelled("function")

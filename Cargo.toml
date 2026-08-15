@@ -1,25 +1,28 @@
 [package]
+license = "MIT"
+description = "small interpreted stack-based array programming language"
 name = "kale"
 version = "0.1.0"
 edition = "2024"
-
+authors = ["bendn <bend.n@outlook.com>"]
+repository = "https://git.bendn.org/kale"
+categories = ["compilers", "parser-implementations"]
+keywords = ["stack", "language", "array"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-
-chumsky = { git = "https://codeberg.org/zesterer/chumsky", hash="ba2122d298639b9ecbf3289392b90dae70a4b0ef", features = [
+chumsky = { git = "https://codeberg.org/zesterer/chumsky", rev = "ba2122d298639b9ecbf3289392b90dae70a4b0ef", features = [
     "nightly",
 ], default-features = false }
 beef = "0.5.2"
 logos = "0.15.1"
 tinyvec = { version = "1.12.0", features = ["alloc"] }
 comat = "0.1.3"
-lerr = "0.1.5"
-match_deref = "0.1.2"
-paste = "1.0.15"
 regex = "1.13.1"
 itertools = "0.14.0"
-codespan-reporting = { git = "https://github.com/brendanzab/codespan", version = "0.13.1" }
+codespan-reporting = { git = "https://github.com/brendanzab/codespan", rev = "b563293" }
 umath = "0.0.7"
 pyo3 = "0.29.2"
 
+[package.metadata.docs.rs]
+rustdoc-args = ["--generate-link-to-definition"]

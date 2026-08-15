@@ -55,7 +55,7 @@ macro_rules! t {
 }
 macro_rules! parser {
     ($t:ty) => {
-        impl Parser<'s, crate::parser::types::Input<'s>, $t, extra::Err<Error<'s>>> + Clone + 's
+        impl chumsky::Parser<'s, crate::parser::types::Input<'s>, $t, chumsky::extra::Err<$crate::parser::types::Error<'s>>> + Clone + 's
     }
 }
 
@@ -77,7 +77,9 @@ macro_rules! spanned {
 }
 
 use chumsky::input::MapExtra;
-pub(crate) use {parser, spanned, t};
+pub(crate) use parser;
+pub(crate) use spanned;
+pub(crate) use t;
 
 pub trait Unit<T> {
     fn empty(&self) -> T;

@@ -9,8 +9,6 @@ pub mod util;
 use types::{Spanned, *};
 use util::*;
 
-use self::fun::Function;
-
 impl<'s> Value<'s> {
     pub fn parse() -> parser![Spanned<Self>] {
         select! {

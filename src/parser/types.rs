@@ -7,6 +7,7 @@ use chumsky::input::{MappedInput, Stream};
 use chumsky::prelude::*;
 
 use crate::exec::Argc;
+pub use crate::lexer::Function;
 use crate::lexer::Token;
 use crate::parser::util::Spanner;
 pub type Span = SimpleSpan<usize>;
@@ -105,7 +106,7 @@ impl std::fmt::Debug for Expr<'_> {
 
 #[derive(Clone)]
 pub enum Expr<'s> {
-    Function(super::fun::Function<'s>),
+    Function(Function<'s>),
     Value(Value<'s>),
 }
 

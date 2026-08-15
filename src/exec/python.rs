@@ -127,9 +127,10 @@ pub fn exec<'s>(
         let x = locals.get_item("s").unwrap().unwrap();
         let x = x.cast::<PyList>().unwrap();
         let n = x.len();
+        assert_eq!(n, argc.output);
         stack.extend(
             x.into_iter()
-                .skip(n.saturating_sub(argc.output))
+                // .skip(n.saturating_sub(argc.output))
                 .map(|x| x.extract::<Val<'_>>().map(|x| x.spun(span)))
                 .try_collect::<Vec<_>>()
                 .map_err(|_| Error::lazy(code.span, "nooo"))?,

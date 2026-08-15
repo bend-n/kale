@@ -4,12 +4,11 @@ use std::fmt::Display;
 use std::hash::Hash;
 use std::iter::{once, successors};
 use std::mem::take;
-use std::ops::{Add, Deref, DerefMut, Index};
+use std::ops::{Add, Deref, DerefMut};
 mod python;
 use chumsky::span::{SimpleSpan, Span as _};
 use itertools::chain;
 
-use crate::parser::fun::Function;
 use crate::parser::types::{Span, *};
 use crate::parser::util::Spanner;
 #[derive(Clone, Copy, PartialEq, Default, Eq, Hash, PartialOrd, Ord)]
@@ -1098,25 +1097,25 @@ impl<'s> Function<'s> {
             Self::First => {
                 let array = pop!().assert_array(span)?;
                 stack.push(
-                    each!(array.inner, |x| Ok(Val::from(x.get(0).cloned().ok_or_else(|| {
-                        Error {
-                            name: format!("array is empty"),
-                            message: "here".to_string().spun(span),
-                            ..Default::default()
-                        }
-                    })?)),  Vec<_> => Result<Val>)?.spun(span),
+                    Val::from(array.get(0).ok_or_else(|| Error {
+                        name: format!("array is empty"),
+                        message: "here".to_string().spun(span),
+                        ..Default::default()
+                    })?)
+                    .spun(span),
                 );
             }
             Self::Last => {
                 let array = pop!().assert_array(span)?;
                 stack.push(
-                    each!(array.inner, |x| Ok(Val::from(x.get(x.len()-1).cloned().ok_or_else(|| {
-                        Error {
+                    Val::from(array.get(array.len() - 1).ok_or_else(
+                        || Error {
                             name: format!("array is empty"),
                             message: "here".to_string().spun(span),
                             ..Default::default()
-                        }
-                    })?)),  Vec<_> => Result<Val>)?.spun(span),
+                        },
+                    )?)
+                    .spun(span),
                 );
             }
             Self::Index => {

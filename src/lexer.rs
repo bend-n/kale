@@ -1,17 +1,30 @@
+#![allow(unexpected_cfgs, rustdoc::invalid_rust_codeblocks)]
 use std::sync::LazyLock;
 
 use beef::lean::Cow;
 use chumsky::span::{SimpleSpan, Span};
 use logos::{Lexer as RealLexer, Logos, SpannedIter};
 use regex::Regex;
+
+use crate::exec::Argc;
+use crate::parser::types::{Λ, *};
 static EMOJI: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[\p{Emoji}&&[^0-9]]").unwrap());
+
 macro_rules! tokens {
-    ($($z:literal $( | $y:literal)? => $v:ident,)+) => {
+    ($(
+        $(#[$attr:ident = $attrval:expr])*
+        $z:literal $( | $y:literal)? => $v:ident  $($eq:literal @)? $(_ $expr:tt)?,)+
+        //&
+
+        //$(
+            //$(#[$fattr:ident = $fattrval:expr])*
+            //$fname:ident $expr:tt),* $(,)?
+    ) => {
         #[derive(Logos, Debug, PartialEq, Clone)]
         #[logos(skip r"[\n\s]+")]
         #[allow(dead_code)]
-        pub(crate) enum Token<'strings> {
+        pub enum Token<'strings> {
             #[regex("/[^\n/]+/?", priority = 8)]
             Comment(&'strings str),
             #[regex(r"[0-9]+", |lex| lex.slice().parse().ok())]
@@ -26,7 +39,7 @@ macro_rules! tokens {
             #[regex(r"'.'", |lex| lex.slice().as_bytes()[1] as char)]
             Char(char),
             // todo ignore alot
-            #[regex(r"[^\s\(\)\[\]\{\}⎬0-9λ'\-←→=≢≡+×\|*√<\-¯∧∨⊻÷%]", priority = 7, callback = |lex| {
+            #[regex(r"[^\s\(\)\[\]\{\}⎬0-9@'\-←→=≢≡+×\|*√<\-¯∧∨⊻÷%]", priority = 7, callback = |lex| {
                 EMOJI.is_match(lex.slice())
                   .then_some(logos::Filter::Skip)
                   .unwrap_or(logos::Filter::Emit(lex.slice()))
@@ -42,11 +55,27 @@ macro_rules! tokens {
             #[token("}", chr::<'}'>)]
             ClosingBracket(char),
 
-            $(#[token($z, priority = 8)] $(#[token($y, priority = 8)])? $v,)+
+            $(
+                $(#[$attr = $attrval])*
+                $(#[doc = concat!("link",  stringify!($eq), " [`Function::" , stringify!($v), "`]\n")])?
+                #[doc=concat!("character: `", $z, "`")]
+                #[token($z, priority = 8)]
+                $(#[token($y, priority = 8)])?
+            $v,)+
 
             Unknown,
         }
-
+        impl <'s> Function<'s> {
+            pub(crate) fn basic() -> crate::parser::util::parser![Self]  {
+                use chumsky::Parser;
+                chumsky::select! {
+                    Token::Zap => Self::Zap(None),
+                    Token::ClosingBracket('}') => Self::Setify,
+                    Token::Ident(x) => Self::Ident(x),
+                    $($(Token::$v =>  {stringify!($eq); Self::$v },)?)+
+                }.labelled("token")
+            }
+        }
         impl std::fmt::Display for Token<'_> {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
                 match self {
@@ -62,72 +91,146 @@ macro_rules! tokens {
                 }
             }
         }
+
+#[derive(Debug, Clone)]
+pub enum Function<'s> {
+    #[doc(hidden)]
+    Setify,
+    #[allow(dead_code)]
+    #[doc(hidden)]
+    If { then: Λ<'s>, or: Λ<'s> },
+    #[doc(hidden)]
+    Ident(&'s str),
+    #[doc(hidden)]
+    Define(&'s str),
+    // $($(#[$fattr = $fattrval])* $fname $expr,)*
+    $(
+        $(#[$attr = $attrval])*
+        $(#[doc = concat!("<h1>", $z, "</h1>")] #[cfg(not(target_family = $eq))] $v,)?
+        $(#[doc = concat!("<h1>", $z, "</h1>")] $v $expr,)?
+    )+
+    /// [n = drops n items.
+    ///
+    /// <h1>[</h1>
+    Take(u64),
+}
+
     }
 }
 
 tokens! {
     "λ" => Lambda,
-    "⎦" => ArrayN,
+    /// Create an array from n items off the stack:
+    /// ```
+    /// 1 2 3 4 ⎦4
+    /// ```
+    /// Produces an array of [1, 2, 3, 4]
+    "⎦" => Array _ (Option<u64>),
     "→" => Place,
 
-    "≡" => Eq,
-    "≣" => Matches,
-    "≢" => Ne,
-    "+" => Add,
-    "-" => Sub,
-    "×" => Mul,
-    "ⁿ" => Pow,
-    "<" => Lt,
-    ">" => Gt,
-    "≤" => Le,
-    "≥" => Ge,
-    "÷" => Div,
-    "%" => Mod,
-    "∧" => BitAnd,
-    "∨" => Or,
-    "⊕" => Xor,
-    "∈" => In,
+    /// Array contains.
+    "∈" => In "0" @,
 
-    "!" => Not,
-    "¯" => Neg,
-    "√" => Sqrt,
 
-    "^" => Dup,
-    "&" => And,
-    "|" => Both,
-    "🔀" => Flip,
-    "⤵️" => Zap,
-
-    "⬇️" => With,
-    "⬆" => Merge,
-    "⏫" => Range,
-    "🪪" => Type,
-    "📏" => Length,
-    "👩‍👩‍👧‍👧" => Group,
-    "📂" => Open,
-    "⏪" => Shl,
-    "⏩" => Shr,
-    "❎" => Del,
-    "📶" => Sort,
-    "🔓" => Mask,
-    "🔒" => Index,
-    "#️⃣🗺" => HashMap,
-    "≣#️⃣" => Get,
-    "∅" => Set,
-    "💽" => Append,
-    "⬅️" => First,
-    "➡" => Last,
-    "↘️" => Reduce,
-    "↖" => Scan,
-    "⏭️" => Fold,
-    "🗺" => Map,
+    /// Duplicates the top value of the stack.
+    "^" => Dup "0" @,
+    /// Runs n functions on the same values in the stack, pulling y items where y is the maximum arguments of any of the functions.
+    "&" => And _ (Vec<Spanned<Λ<'s>>>),
+    /// Runs one function n times, with new stack items every time, where n is the number of instances of this symbol.
+    /// ```kale
+    /// 1 2 3 4 +|
+    /// / results in 7 3
+    /// ```
+    "|" => Both _ (Spanned<Λ<'s>>, usize),
+    /// Flips the top two values on the stack.
+    "🔀" => Flip "0" @,
+    /// Zaps the top value on the stack, or the nth value, if followed by a number.
+    "⤵️" | "⤵" => Zap _ (Option<u64>),
+    /// Pops an array off of the stack to use it as a stack.
+    "⬇️" | "⬇" => With _ (Spanned<Λ<'s>>),
+    /// Pops a number, creates an array from 0-n
+    "⏫" => Range "0" @,
+    // "🪪" => Type "0" @,
+    /// Pops an array, gets the length.
+    "📏" => Length "0" @,
+    /// Groups an array by a mask, grouping by the ones in the mask array.
+    /// ```kale
+    /// 5⏫^2≢👩‍👩‍👧‍👧
+    /// ```
+    /// Would split by two, producing [0, 1] and [3, 4].
+    "👩‍👩‍👧‍👧" => Group "0" @,
+    /// Pops a string, opens that file, producing an array of utf8 integers.
+    "📂" => Open "0" @,
+    "⏪" => Shl "0" @,
+    "⏩" => Shr "0" @,
+    /// Takes an array, index, removes the element in the array at that index.
+    "❎" => Del "0" @,
+    /// Sorts an array.
+    "📶" => Sort "0" @,
+    /// Given an array, and a mask, masks the array by the mask.
+    /// In other words, picks only the values for which are one in the mask.
+    /// ```
+    /// 10⏫^5<
+    /// 🔓
+    /// ```
+    /// Produces [0, 1, 2, 3, 4],
+    "🔓" => Mask "0" @,
+    /// Given an array of indexes, and an array, indexes the array by those indices.
+    "🔒" => Index "0" @,
+    "#️⃣🗺" => HashMap "0" @,
+    "≣#️⃣" => IndexHashMap "0" @,
+    "∅" => EmptySet "0" @,
+    /// Places a value in an array.
+    "💽" => Append "0" @,
+    /// Get first item in array.
+    "⬅️" | "⬅" => First "0" @,
+    /// Get last item in array.
+    "➡️" | "➡" => Last "0" @,
+    /// Reduce an array by a function.
+    "↘️" | "↘" => Reduce _ (Spanned<Λ<'s>>),
+    /// Scan an array by a function. So it reduces, keeping the product.
+    "↖️" | "↖" => Scan _ (Spanned<Λ<'s>>),
+    /// Fold an array by a function (note that the accumulator is taken after the array).
+    "⏭️" | "⏭" => Fold _ (Spanned<Λ<'s>>),
+    /// Map an array by a function.
+    "🗺" => Map _ (Spanned<Λ<'s>>),
     "🐋" => If,
     "🐬" => EagerIf,
-    "🇳🇿" => Zip,
-    "🪟" => Windows,
-    "🧐" => Debug,
-    "." => Identity,
-    "🐍" => Python,
+    /// Zip two arrays together.
+    "🇳🇿" => Zip "0" @,
+    /// Get the windows of an array.
+    "🪟" => Windows "0" @,
+    /// Debugs the stack at the current point in time.
+    "🧐" => Debug "0" @,
+    /// Takes one value, pushes one value.
+    "." => Identity "0" @,
+    /// Invoke python. Requires specifying the signature. In python land, the executor will be able to access a `s` variable, containing the stack. If the python does not satisfy the signature, an error will occur.
+    /// ```
+    /// 5 "s.append(s.pop()+1)"🐍1 → 1
+    /// ```
+    /// Produces six.
+    "🐍" => Python _ (Argc),
+
+
+    "≡" => Eq "0" @,
+    "≣" => Matches "0" @,
+    "≢" => Ne "0" @,
+    "+" => Add "0" @,
+    "-" => Sub "0" @,
+    "×" => Mul "0" @,
+    "ⁿ" => Pow "0" @,
+    "<" => Lt "0" @,
+    ">" => Gt "0" @,
+    "≤" => Le "0" @,
+    "≥" => Ge "0" @,
+    "÷" => Div "0" @,
+    "%" => Mod "0" @,
+    "∧" => BitAnd "0" @,
+    "∨" => Or "0" @,
+    "⊕" => Xor "0" @,
+    "!" => Not "0" @,
+    "¯" => Neg "0" @,
+    "√" => Sqrt "0" @,
 }
 
 pub fn lex(s: &str) -> Lexer<'_> {
@@ -141,7 +244,7 @@ fn chr<'src, const CHR: char>(
 ) -> Result<char, ()> {
     Ok(CHR)
 }
-pub(crate) struct Lexer<'s> {
+pub struct Lexer<'s> {
     inner: SpannedIter<'s, Token<'s>>,
 }
 
@@ -161,7 +264,7 @@ impl<'s> Iterator for Lexer<'s> {
 fn lexer() {
     let lex = lex(r#""1abc25hriwm4"
     / { str → int } /
-    line ← λ (
+    line ← "0" @(
         '0'>🔎'9'<🔎
         '9'-
         / modifiers are placed in front /

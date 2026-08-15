@@ -1,3 +1,4 @@
+#![doc = include_str!("../README.md")]
 #![feature(
     yeet_expr,
     iter_intersperse,
@@ -7,11 +8,12 @@
     impl_trait_in_bindings,
     arbitrary_self_types
 )]
-mod array;
+
 mod exec;
 mod lexer;
 mod parser;
 mod ui;
+pub use lexer::Function;
 fn main() {
     let x =
         std::fs::read_to_string(std::env::args().nth(1).unwrap()).unwrap();
